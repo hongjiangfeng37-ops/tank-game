@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>坦克动荡 · 多人联机</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%9B%A1%EF%B8%8F%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<!-- 顶部信息 -->
+<div id="topbar" class="hidden">
+  <div id="roomInfo">房间 <b id="codeText"></b> <button id="btnCopy" class="mini" title="复制房间链接">复制链接</button></div>
+  <div id="pingBox">延迟 <span id="pingText">-</span>ms</div>
+  <div class="topright">
+    <button id="btnPub" class="mini hidden" title="复制公网链接">🌐 公网</button>
+    <button id="btnMute" class="mini">🔊</button>
+    <button id="btnLeave" class="mini">退出房间</button>
+  </div>
+</div>
+
+<!-- 倒计时 / 横幅 / 击杀播报 -->
+<div id="countdown" class="hidden"></div>
+<div id="banner" class="hidden"></div>
+<div id="killfeed"></div>
+
+<!-- HUD -->
+<div id="hud" class="hidden">
+  <div id="hpWrap"><div id="hpBar"></div><span id="hpText"></span></div>
+  <div id="buffs"></div>
+</div>
+<div id="deathOverlay" class="hidden"><div id="deathText"></div></div>
+
+<!-- 记分板 -->
+<div id="scoreboard" class="hidden"><div class="sbTitle">记分板</div><div id="sbRows"></div></div>
+
+<!-- 小地图 -->
+<canvas id="minimap" width="148" height="111"></canvas>
+
+<!-- 主菜单 -->
+<div id="menu" class="panel">
+  <h1>🛡️ 坦克动荡</h1>
+  <p class="sub">多人联机 · 最后一辆坦克获胜</p>
+  <input id="nameInput" maxlength="12" placeholder="输入昵称">
+  <div class="row"><button id="btnCreate" class="primary">创建房间</button></div>
+  <div class="row">
+    <input id="joinInput" maxlength="4" placeholder="房间号(4位)" class="join">
+    <button id="btnJoin">加入房间</button>
+  </div>
+  <div id="errMsg"></div>
+  <div id="lanRooms">
+    <div class="lrTitle"><span>📡 局域网房间</span><button id="btnRefresh" class="mini">刷新</button></div>
+    <div id="roomList"><p class="empty">正在扫描…</p></div>
+  </div>
+  <div class="tips">
+    <p><b>操作：</b>WASD / 方向键 移动 · 鼠标 瞄准 · 左键 / 空格 开火 · Shift 加速 · M 静音</p>
+    <p><b>玩法：</b>炮弹可反弹 3 次，捡道具强化自己，坚持到最后获胜！</p>
+  </div>
+</div>
+
+<!-- 大厅 -->
+<div id="lobby" class="panel hidden">
+  <h2>房间 <span id="lobbyCode"></span></h2>
+  <div id="lobbyLink"></div>
+  <div id="tunnelBox">
+    <button id="btnTunnel">🌐 开启公网联机</button>
+    <div id="tunnelStatus"></div>
+  </div>
+  <div id="playerList"></div>
+  <div class="row">
+    <button id="btnStart" class="primary">开始游戏</button>
+    <button id="btnBack">返回</button>
+  </div>
+  <p id="lobbyHint"></p>
+</div>
+
+<!-- 触屏加速键 -->
+<div id="boostBtn">加速</div>
+
+<!-- 竖屏提示 -->
+<div id="rotHint">📱 请横屏游玩<br><small>旋转手机以获得最佳体验</small></div>
+
+<!-- 连接遮罩 -->
+<div id="connOverlay" class="hidden">
+  <div class="spin"></div>
+  <div id="connText">连接中…</div>
+  <button id="btnConnCancel" class="hidden">返回</button>
+</div>
+
+<script src="game.js"></script>
+</body>
+</html>
