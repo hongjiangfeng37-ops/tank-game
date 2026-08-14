@@ -55,11 +55,25 @@ const SPAWNS = [
   { x: 110, y: 600, a: 0 },
   { x: 1490, y: 600, a: Math.PI },
 ];
-const TANK = { r: 22, maxSpeed: 240, accel: 340, back: 0.62, turn: 3.2, dragF: 0.9, dragL: 3.8, hp: 100, boostMult: 1.3 };
-const BULLET = { speed: 620, r: 5, dmg: 30, bounces: 3, life: 3.5, cooldown: 0.35, rapidCd: 0.14 };
-const MAG_SIZE = 6;        // 弹匣容量
-const RELOAD_TIME = 1.4;   // 换弹时间(秒)
-const PARTS_LIST = ['track', 'turret', 'engine', 'ammo', 'optics']; // 可损坏部件
+const TANK = { r: 22, accel: 340, turn: 3.2, dragF: 0.9, dragL: 3.8, hp: 100, boostMult: 1.3 };
+// 坦克类型（玩家开局选择）
+const TANK_TYPES = {
+  us: {
+    name: '美军 M1A2', maxSpeed: 270, back: 0.8, reload: 4, era: 2,
+    pen: { front: 0.65, side: 0.85, back: 0.95 },  // 击穿概率
+    ammoZone: 'rear',   // 弹药架位于炮塔后方
+    hasLoader: false,
+  },
+  ru: {
+    name: '俄军 T90M', maxSpeed: 205, back: 0.35, reload: 6, era: 3,
+    pen: { front: 0.3, side: 0.65, back: 0.85 },   // 正面极难击穿
+    ammoZone: 'side',   // 弹药架位于侧面中心
+    hasLoader: true,    // 自动装弹机：损坏后装填时间翻倍
+  },
+};
+const BULLET = { speed: 620, r: 5, dmg: 30, bounces: 5, life: 5.5, cooldown: 0.35, rapidCd: 0.14 };
+const MAG_SIZE = 1;        // 弹匣容量（单发装填）
+const PARTS_LIST = ['track', 'turret', 'engine', 'ammo', 'optics', 'loader']; // 可损坏部件（loader 仅俄军）
 const FRONT_PARTS = ['track', 'turret', 'engine', 'optics'];         // 正面命中不会直接坏弹药架
 const REPAIR_TIME = 2.5;   // 停车维修一个部件所需秒数
 const FIRE_TIME = 3;       // 起火持续秒数
@@ -207,7 +221,7 @@ function genCode() {
 }
 
 function roster(room) {
-  return [...room.players.values()].map((p) => ({ id: p.id, name: p.name, alive: p.alive, host: p.id === room.hostId }));
+  return [...room.players.values()].map((p) => ({ id: p.id, name: p.name, alive: p.alive, host: p.id === room.hostId, type: p.type }));
 }
 function scores(room) {
   return [...room.players.values()].map((p) => ({ id: p.id, name: p.name, kills: p.kills, wins: p.wins, alive: p.alive }));
@@ -242,8 +256,9 @@ function addPlayer(room, conn, name) {
     id, name, conn, room,
     tank: null, alive: false, deadAt: 0,
     kills: 0, wins: 0,
+    type: 'us', era: TANK_TYPES.us.era,
     shield: false, rapid: 0, triple: 0, fireCd: 0,
-    parts: { track: true, turret: true, engine: true, ammo: true, optics: true },
+    parts: { track: true, turret: true, engine: true, ammo: true, optics: true, loader: true },
     repairT: 0, fireT: 0, fireDmg: 0,
     input: { thr: 0, steer: 0, ta: null, shoot: false, boost: false },
   };
@@ -288,12 +303,13 @@ function spawnPlayer(room, p, seat) {
   p.shield = false;
   p.rapid = 0;
   p.triple = 0;
-  p.mag = MAG_SIZE;
+  p.mag = MAG_SIZE;                       // 单发：开局已装填
   p.reloadT = 0;
-  p.parts = { track: true, turret: true, engine: true, ammo: true, optics: true };
+  p.parts = { track: true, turret: true, engine: true, ammo: true, optics: true, loader: true };
   p.repairT = 0;
   p.fireT = 0;
   p.fireDmg = 0;
+  p.era = TANK_TYPES[p.type].era;         // 反应装甲按型号重置
 }
 
 function startRound(room) {
@@ -358,7 +374,7 @@ function sim(room, dt, now) {
     p.fireCd -= dt;
     const rapid = p.rapid > 0; p.rapid -= dt;
     const triple = p.triple > 0; p.triple -= dt;
-    // 换弹计时：装填完成后恢复弹匣
+    // 换弹计时：装填完成后恢复弹匣（单发制）
     if (p.reloadT > 0) {
       p.reloadT -= dt;
       if (p.reloadT <= 0) p.mag = MAG_SIZE;
@@ -402,7 +418,8 @@ function sim(room, dt, now) {
 
     const f = { x: Math.cos(tk.a), y: Math.sin(tk.a) };
     const px = -f.y, py = f.x;
-    const thr = (canMove ? inp.thr : 0) * (inp.thr < 0 ? TANK.back : 1);
+    const tt = TANK_TYPES[p.type];
+    const thr = (canMove ? inp.thr : 0) * (inp.thr < 0 ? tt.back : 1);
     tk.vx += f.x * thr * TANK.accel * dt;
     tk.vy += f.y * thr * TANK.accel * dt;
     let fwd = tk.vx * f.x + tk.vy * f.y;
@@ -412,7 +429,7 @@ function sim(room, dt, now) {
     lat *= Math.exp(-TANK.dragL * dt);
     tk.vx = f.x * fwd + px * lat;
     tk.vy = f.y * fwd + py * lat;
-    const spd = TANK.maxSpeed * (p.parts.engine ? 1 : 0.45) * (inp.boost ? TANK.boostMult : 1);
+    const spd = tt.maxSpeed * (p.parts.engine ? 1 : 0.45) * (inp.boost ? TANK.boostMult : 1);
     const sp = Math.hypot(tk.vx, tk.vy);
     if (sp > spd) { tk.vx *= spd / sp; tk.vy *= spd / sp; }
 
@@ -423,46 +440,46 @@ function sim(room, dt, now) {
 
     collideTankWorld(tk, room.obstacles);
 
-    // 开火（弹匣制：打空自动换弹；炮塔损坏无法开火；弹药架损坏开火有殉爆风险）
+    // 开火（单发制：装填完成后可发射；炮塔损坏无法开火；弹药架损坏开火有殉爆风险；枪口顶墙禁止隔墙射击）
     if (inp.shoot && p.fireCd <= 0 && p.mag > 0 && canFire) {
-      // 弹药架受损：25% 概率开火殉爆
-      if (!p.parts.ammo && Math.random() < 0.25) {
-        p.alive = false;
-        p.deadAt = now;
-        const killer = room.players.get(p.lastHitBy);
-        if (killer && killer.id !== p.id) {
-          killer.kills++;
-          room.pendingEvents.push({ k: 'kill', killer: killer.name, victim: p.name, reason: '殉爆', x: Math.round(tk.x), y: Math.round(tk.y) });
-        }
-        room.pendingEvents.push({ k: 'boom', x: Math.round(tk.x), y: Math.round(tk.y) });
-        continue; // 下一辆坦克
-      }
-      p.fireCd = rapid ? BULLET.rapidCd : BULLET.cooldown;
-      p.mag--;
-      if (p.mag <= 0) p.reloadT = RELOAD_TIME;
       const mx = tk.x + Math.cos(tk.ta) * 34;
       const my = tk.y + Math.sin(tk.ta) * 34;
-      const fire = (ang) => {
-        // 枪口若伸进障碍内部，沿炮管方向推出，避免子弹出生即被障碍吞掉
-        let bx = mx, by = my;
-        for (let k = 0; k < 30; k++) {
-          let inside = false;
-          for (const o of room.obstacles) {
-            if (bx >= o.x && bx <= o.x + o.w && by >= o.y && by <= o.y + o.h) { inside = true; break; }
+      // 炮管穿过障碍（隔墙射击）修复：枪口在障碍内则无法开火
+      let muzzleBlocked = false;
+      for (const o of room.obstacles) {
+        if (mx >= o.x && mx <= o.x + o.w && my >= o.y && my <= o.y + o.h) { muzzleBlocked = true; break; }
+      }
+      if (!muzzleBlocked) {
+        // 弹药架受损：25% 概率开火殉爆
+        if (!p.parts.ammo && Math.random() < 0.25) {
+          p.alive = false;
+          p.deadAt = now;
+          const killer = room.players.get(p.lastHitBy);
+          if (killer && killer.id !== p.id) {
+            killer.kills++;
+            room.pendingEvents.push({ k: 'kill', killer: killer.name, victim: p.name, reason: '殉爆', x: Math.round(tk.x), y: Math.round(tk.y) });
           }
-          if (!inside) break;
-          bx += Math.cos(ang) * 12;
-          by += Math.sin(ang) * 12;
+          room.pendingEvents.push({ k: 'boom', x: Math.round(tk.x), y: Math.round(tk.y) });
+          continue; // 下一辆坦克
         }
-        room.bullets.push({
-          x: bx, y: by,
-          vx: Math.cos(ang) * BULLET.speed, vy: Math.sin(ang) * BULLET.speed,
-          ownerId: p.id, bounces: BULLET.bounces, life: BULLET.life,
-        });
-      };
-      if (triple) { fire(tk.ta - 0.18); fire(tk.ta); fire(tk.ta + 0.18); }
-      else fire(tk.ta);
-      room.pendingEvents.push({ k: 'shot', id: p.id, x: Math.round(mx), y: Math.round(my) });
+        p.fireCd = 0;
+        p.mag = 0;
+        // 装填时间：按型号，装弹机损坏翻倍，速射道具减半
+        let reload = tt.reload;
+        if (p.parts.loader === false) reload *= 2; // 俄军装弹机损坏
+        if (rapid) reload *= 0.5;
+        p.reloadT = reload;
+        const fire = (ang) => {
+          room.bullets.push({
+            x: mx, y: my,
+            vx: Math.cos(ang) * BULLET.speed, vy: Math.sin(ang) * BULLET.speed,
+            ownerId: p.id, bounces: BULLET.bounces, life: BULLET.life,
+          });
+        };
+        if (triple) { fire(tk.ta - 0.18); fire(tk.ta); fire(tk.ta + 0.18); }
+        else fire(tk.ta);
+        room.pendingEvents.push({ k: 'shot', id: p.id, x: Math.round(mx), y: Math.round(my) });
+      }
     }
   }
 
@@ -540,7 +557,7 @@ function sim(room, dt, now) {
       }
     }
 
-    // 命中坦克（模块化损伤：按命中部位判定伤害与部件损坏）
+    // 命中坦克（模块化损伤：弹药架弱点区域 / 击穿判定 / 反应装甲 / 区域模块损坏）
     if (!dead) {
       for (const q of alive) {
         if (q.id === b.ownerId) continue;
@@ -553,29 +570,21 @@ function sim(room, dt, now) {
             q.shield = false;
             room.pendingEvents.push({ k: 'shield', id: q.id, x: Math.round(t2.x), y: Math.round(t2.y) });
           } else {
+            const tt = TANK_TYPES[q.type];
             // 部位判定：子弹方向 vs 坦克正面
             const fwdX = Math.cos(t2.a), fwdY = Math.sin(t2.a);
             const bSpeed = Math.hypot(b.vx, b.vy) || 1;
             const dot = (b.vx * fwdX + b.vy * fwdY) / bSpeed;
             const zone = dot > 0.5 ? 'front' : (dot < -0.5 ? 'back' : 'side');
-            const dmg = zone === 'front' ? 20 : (zone === 'back' ? 40 : 30);
-            let partsBroken = 0;
-            let detonate = false;
-            if (zone === 'front') {
-              if (Math.random() < 0.8) partsBroken = 1;          // 正面：大概率坏 1 个部件
-            } else if (zone === 'side') {
-              const r = Math.random();
-              if (r < 0.12) detonate = true;                      // 侧面：概率殉爆
-              else if (r < 0.5) partsBroken = 2;
-              else partsBroken = 1;
-            } else {
-              const r = Math.random();
-              if (r < 0.22) detonate = true;                      // 背面：更高殉爆概率
-              else if (r < 0.72) partsBroken = 2;
-              else partsBroken = 1;
-            }
-            if (detonate) {
-              // 弹药架殉爆：立即击毁
+            // 命中点局部坐标：+x 坦克前方，|y| 横向
+            const rx = dx * fwdX + dy * fwdY;
+            const ry = -dx * fwdY + dy * fwdX;
+            // 弹药架弱点区域（按型号设计）：击中必殉爆
+            const ammoHit = tt.ammoZone === 'rear'
+              ? (rx < -10 && Math.abs(ry) < 18)   // 美军：炮塔后方
+              : (Math.abs(ry) > 16 && Math.abs(rx) < 20); // 俄军：侧面中心
+            if (ammoHit) {
+              // 弹药架殉爆：立即击毁（弱点命中无视反应装甲）
               q.alive = false;
               q.deadAt = now;
               const killer = room.players.get(b.ownerId);
@@ -585,33 +594,89 @@ function sim(room, dt, now) {
               }
               room.pendingEvents.push({ k: 'boom', x: Math.round(t2.x), y: Math.round(t2.y) });
             } else {
-              t2.hp -= dmg;
-              q.lastHitBy = b.ownerId;
-              const pool = zone === 'front' ? FRONT_PARTS : PARTS_LIST;
-              const brokenParts = [];
-              for (let k = 0; k < partsBroken; k++) {
-                const avail = pool.filter((n) => q.parts[n]);
-                if (!avail.length) break;
-                const pick = avail[rnd(avail.length)];
-                q.parts[pick] = false;
-                brokenParts.push(pick);
-              }
-              // 起火：12% 概率，持续 3 秒每秒 5 伤害
-              if (Math.random() < 0.12) {
-                q.fireT = FIRE_TIME;
-                q.fireDmg = 0;
-                room.pendingEvents.push({ k: 'fire', id: q.id, x: Math.round(t2.x), y: Math.round(t2.y) });
-              }
-              room.pendingEvents.push({ k: 'hit', id: q.id, zone, parts: brokenParts, x: Math.round(b.x), y: Math.round(b.y) });
-              if (t2.hp <= 0) {
-                q.alive = false;
-                q.deadAt = now;
-                const killer = room.players.get(b.ownerId);
-                if (killer && killer.id !== q.id) {
-                  killer.kills++;
-                  room.pendingEvents.push({ k: 'kill', killer: killer.name, victim: q.name, reason: '击毁', x: Math.round(t2.x), y: Math.round(t2.y) });
+              // 击穿判定（按型号与部位；反应装甲存在时更难穿透）
+              let pen = tt.pen[zone];
+              if (q.era > 0) pen *= 0.55;
+              const penetrated = Math.random() < pen;
+              if (!penetrated) {
+                // 未击穿：反应装甲吸收（或少量跳弹伤害），不掉模块
+                const eraLeft = q.era > 0 ? q.era : 0;
+                if (q.era > 0) q.era--;
+                t2.hp -= Math.max(3, dmg * 0.15);
+                room.pendingEvents.push({ k: 'hit', id: q.id, zone, parts: [], pen: false, era: q.era, x: Math.round(b.x), y: Math.round(b.y) });
+                if (eraLeft === 0 && t2.hp <= 0) {
+                  q.alive = false;
+                  q.deadAt = now;
+                  const killer = room.players.get(b.ownerId);
+                  if (killer && killer.id !== q.id) {
+                    killer.kills++;
+                    room.pendingEvents.push({ k: 'kill', killer: killer.name, victim: q.name, reason: '车组阵亡', x: Math.round(t2.x), y: Math.round(t2.y) });
+                  }
+                  room.pendingEvents.push({ k: 'boom', x: Math.round(t2.x), y: Math.round(t2.y) });
                 }
-                room.pendingEvents.push({ k: 'boom', x: Math.round(t2.x), y: Math.round(t2.y) });
+              } else {
+                // 击穿：全伤害 + 反应装甲消耗 + 区域模块损坏
+                const dmg = zone === 'front' ? 20 : (zone === 'back' ? 40 : 30);
+                t2.hp -= dmg;
+                q.lastHitBy = b.ownerId;
+                if (q.era > 0) q.era--;
+                const brokenParts = [];
+                const breakOne = (pool) => {
+                  const avail = pool.filter((n) => q.parts[n]);
+                  if (!avail.length) return;
+                  const pick = avail[rnd(avail.length)];
+                  q.parts[pick] = false;
+                  brokenParts.push(pick);
+                };
+                // 区域模块损坏：发动机固定后方；正面按型号差异
+                if (zone === 'front') {
+                  if (q.type === 'ru') {
+                    // 俄军正面：只可能坏履带或装弹机
+                    breakOne(['track', 'loader']);
+                  } else {
+                    // 美军正面：炮塔优先，履带其次
+                    if (Math.random() < 0.7) breakOne(['turret']);
+                    else breakOne(['track']);
+                  }
+                } else if (zone === 'back') {
+                  breakOne(['engine']); // 发动机固定位于后方
+                } else {
+                  breakOne(['track']);
+                  if (q.type === 'ru') breakOne(['loader']);
+                }
+                // 观瞄随机附加损坏
+                if (q.parts.optics && Math.random() < 0.15) { q.parts.optics = false; brokenParts.push('optics'); }
+                // 起火：反应装甲存在时概率较低，失效后正常
+                const fireChance = q.era > 0 ? 0.06 : 0.12;
+                if (Math.random() < fireChance) {
+                  q.fireT = FIRE_TIME;
+                  q.fireDmg = 0;
+                  room.pendingEvents.push({ k: 'fire', id: q.id, x: Math.round(t2.x), y: Math.round(t2.y) });
+                }
+                // 殉爆（非弱点区域）：反应装甲失效后概率大幅提升
+                const detChance = q.era > 0 ? (zone === 'side' ? 0.05 : zone === 'back' ? 0.1 : 0) : (zone === 'side' ? 0.25 : zone === 'back' ? 0.4 : 0);
+                if (zone !== 'front' && Math.random() < detChance) {
+                  q.alive = false;
+                  q.deadAt = now;
+                  const killer = room.players.get(b.ownerId);
+                  if (killer && killer.id !== q.id) {
+                    killer.kills++;
+                    room.pendingEvents.push({ k: 'kill', killer: killer.name, victim: q.name, reason: '殉爆', x: Math.round(t2.x), y: Math.round(t2.y) });
+                  }
+                  room.pendingEvents.push({ k: 'boom', x: Math.round(t2.x), y: Math.round(t2.y) });
+                } else {
+                  room.pendingEvents.push({ k: 'hit', id: q.id, zone, parts: brokenParts, pen: true, era: q.era, x: Math.round(b.x), y: Math.round(b.y) });
+                  if (t2.hp <= 0) {
+                    q.alive = false;
+                    q.deadAt = now;
+                    const killer = room.players.get(b.ownerId);
+                    if (killer && killer.id !== q.id) {
+                      killer.kills++;
+                      room.pendingEvents.push({ k: 'kill', killer: killer.name, victim: q.name, reason: q.era > 0 ? '击毁' : '车组阵亡', x: Math.round(t2.x), y: Math.round(t2.y) });
+                    }
+                    room.pendingEvents.push({ k: 'boom', x: Math.round(t2.x), y: Math.round(t2.y) });
+                  }
+                }
               }
             }
           }
@@ -826,7 +891,9 @@ function broadcast(room) {
       trp: p.triple > 0 ? Math.ceil(p.triple) : 0,
       mag: p.mag,
       rl: Math.round(p.reloadT * 10) / 10,
-      prt: [p.parts.track, p.parts.turret, p.parts.engine, p.parts.ammo, p.parts.optics], // 履带/炮塔/发动机/弹药架/观瞄
+      ty: p.type,
+      era: p.era,
+      prt: [p.parts.track, p.parts.turret, p.parts.engine, p.parts.ammo, p.parts.optics, p.parts.loader],
       rp: Math.round(p.repairT * 10) / 10,
       fr: p.fireT > 0 ? Math.ceil(p.fireT) : 0,
       kills: p.kills, wins: p.wins,
@@ -889,6 +956,16 @@ function onMessage(conn, buf) {
     case 'ping': {
       const ts = Number(msg.ts);
       if (Number.isFinite(ts)) send(conn, { t: 'pong', ts });
+      break;
+    }
+    case 'pick': {
+      // 大厅中选择坦克型号
+      if (!p || !p.room || p.room.phase !== 'lobby') break;
+      if (msg.type === 'us' || msg.type === 'ru') {
+        p.type = msg.type;
+        p.era = TANK_TYPES[msg.type].era;
+        broadcastRoom(p.room);
+      }
       break;
     }
     case 'list': {
