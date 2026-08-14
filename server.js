@@ -822,6 +822,11 @@ function serveStatic(req, res) {
 
 const server = http.createServer(serveStatic);
 
+// 关闭 Nagle 算法：游戏小包极多，禁止 40ms 小包合并等待，显著降低高延迟网络下的卡顿感
+server.on('connection', (socket) => {
+  try { socket.setNoDelay(true); } catch (e) { /* ignore */ }
+});
+
 server.on('upgrade', (req, socket, head) => {
   if ((req.url || '').split('?')[0] !== WS_PATH) { socket.destroy(); return; }
   const key = req.headers['sec-websocket-key'];
