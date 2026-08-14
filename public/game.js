@@ -196,6 +196,8 @@
     browse = !!opts.browse;
     joined = false;
     intent = browse ? { join: false, room: null } : { join: true, room: room || null };
+    // 快照本连接的意图：连接生命周期内不受后续 joinRoom/浏览重连影响（修复竞态导致 join 丢失）
+    const myIntent = { join: intent.join, room: intent.room };
     intentionalClose = false;
     if (!browse) { // 浏览模式(房间列表扫描)是静默连接，不显示遮罩
       show(els.connOverlay, true);
@@ -203,31 +205,40 @@
       els.connText.textContent = '连接中…';
     }
     const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
-    try { ws = new WebSocket(proto + location.host + '/ws'); } catch (e) { onConnFail('无法连接服务器'); return; }
-    ws.onopen = () => {
-      if (intent.join) ws.send(JSON.stringify({ t: 'join', name: myName, room: intent.room }));
-      else { ws.send(JSON.stringify({ t: 'list' })); startBrowse(); }
+    let conn;
+    try { conn = new WebSocket(proto + location.host + '/ws'); } catch (e) { onConnFail('无法连接服务器'); return; }
+    ws = conn;
+    conn.onopen = () => {
+      if (myIntent.join) conn.send(JSON.stringify({ t: 'join', name: myName, room: myIntent.room }));
+      else { conn.send(JSON.stringify({ t: 'list' })); startBrowse(); }
     };
-    ws.onmessage = (ev) => {
+    conn.onmessage = (ev) => {
       let m;
       try { m = JSON.parse(ev.data); } catch (e) { return; }
       handleMsg(m);
     };
-    ws.onclose = () => {
-      ws = null;
+    conn.onclose = () => {
+      if (ws === conn) ws = null; // 仅当是当前连接时才清空（避免旧连接关闭覆盖新连接）
       stopBrowse();
       if (intentionalClose) { showMenu(); return; }
-      if (intent.join === false) { // 纯浏览连接：静默重连
-        reconnectTimer = setTimeout(() => { reconnectTimer = null; connect(null, { browse: true }); }, 3000);
+      if (myIntent.join === false) { // 纯浏览连接：静默重连
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          if (intent.join === true) { // 期间已被 joinRoom 接管：按加入连接
+            connect(intent.room, { browse: false });
+          } else {
+            connect(null, { browse: true });
+          }
+        }, 3000);
         return;
       }
       // 已发起加入：按加入意图重连（避免断线后丢失 join 请求）
       els.connText.textContent = '连接断开，正在重连…';
       show(els.connOverlay, true);
       show(els.btnConnCancel, true);
-      reconnectTimer = setTimeout(() => { reconnectTimer = null; connect(intent.room, { browse: false }); }, 1800);
+      reconnectTimer = setTimeout(() => { reconnectTimer = null; connect(myIntent.room, { browse: false }); }, 1800);
     };
-    ws.onerror = () => { /* onclose 处理 */ };
+    conn.onerror = () => { /* onclose 处理 */ };
   }
   function startBrowse() {
     stopBrowse();
@@ -1167,12 +1178,14 @@
     if (ws && ws.readyState === 1) {
       if (!joined) {
         // 从浏览连接转为加入意图：发送 join，并确保断线后按加入重连
+        if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; } // 清掉浏览重连定时器，避免竞态
         intent = { join: true, room: room || null };
         browse = false;
         stopBrowse();
         ws.send(JSON.stringify({ t: 'join', name: myName, room: room || null }));
       }
     } else if (ws && ws.readyState === 0) {
+      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
       intent = { join: true, room: room || null }; // 连接建立后自动加入
     } else {
       connect(room);
