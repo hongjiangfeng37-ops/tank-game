@@ -1,0 +1,15 @@
+# Render 一键部署配置（免费固定网址）
+# 用法：把本文件夹推送到 GitHub，在 Render 用 "New Web Service" 连接仓库即可，
+# 平台自动识别本文件并创建服务，得到永久网址 https://<名称>.onrender.com
+# 注意：render.yaml 必须位于仓库根目录
+services:
+  - type: web
+    name: tank-turmoil
+    runtime: node
+    plan: free
+    startCommand: node server.js
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: TK_TUNNEL_DISABLED
+        value: "1"
