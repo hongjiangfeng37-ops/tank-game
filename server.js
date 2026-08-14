@@ -55,7 +55,7 @@ const SPAWNS = [
   { x: 110, y: 600, a: 0 },
   { x: 1490, y: 600, a: Math.PI },
 ];
-const TANK = { r: 22, accel: 340, turn: 3.2, dragF: 0.9, dragL: 3.8, hp: 100, boostMult: 1.3 };
+const TANK = { r: 22, l: 52, w: 44, accel: 340, turn: 3.2, dragF: 0.9, dragL: 3.8, hp: 100, boostMult: 1.3 };
 // 坦克类型（玩家开局选择）
 const TANK_TYPES = {
   us: {
@@ -577,32 +577,29 @@ function sim(room, dt, now) {
       }
     }
 
-    // 命中坦克（模块化损伤：弹药架弱点区域 / 击穿判定 / 反应装甲 / 区域模块损坏）
+    // 命中坦克（模块化损伤：旋转矩形碰撞与贴图轮廓吻合 / 弹药架弱点区域 / 击穿判定 / 反应装甲）
     if (!dead) {
       for (const q of alive) {
         if (q.id === b.ownerId) continue;
         const t2 = q.tank;
         const dx = t2.x - b.x, dy = t2.y - b.y;
-        const rr = TANK.r + BULLET.r;
-        if (dx * dx + dy * dy < rr * rr) {
+        // 命中点局部坐标：+x 坦克前方，|y| 横向（旋转矩形判定，贴合车体 52x44 贴图轮廓）
+        const fwdX = Math.cos(t2.a), fwdY = Math.sin(t2.a);
+        const rx = dx * fwdX + dy * fwdY;
+        const ry = -dx * fwdY + dy * fwdX;
+        if (Math.abs(rx) < TANK.l / 2 + BULLET.r && Math.abs(ry) < TANK.w / 2 + BULLET.r) {
           dead = true;
           if (q.shield) {
             q.shield = false;
             room.pendingEvents.push({ k: 'shield', id: q.id, x: Math.round(t2.x), y: Math.round(t2.y) });
           } else {
             const tt = TANK_TYPES[q.type];
-            // 部位判定：子弹方向 vs 坦克正面
-            const fwdX = Math.cos(t2.a), fwdY = Math.sin(t2.a);
-            const bSpeed = Math.hypot(b.vx, b.vy) || 1;
-            const dot = (b.vx * fwdX + b.vy * fwdY) / bSpeed;
-            const zone = dot > 0.5 ? 'front' : (dot < -0.5 ? 'back' : 'side');
-            // 命中点局部坐标：+x 坦克前方，|y| 横向
-            const rx = dx * fwdX + dy * fwdY;
-            const ry = -dx * fwdY + dy * fwdX;
-            // 弹药架弱点区域（按型号设计）：击中必殉爆
+            // 部位判定：命中点在车体的前后/侧面位置（与贴图视觉一致）
+            const zone = rx > TANK.l * 0.12 ? 'front' : (rx < -TANK.l * 0.12 ? 'back' : 'side');
+            // 弹药架弱点区域（按型号设计，贴图对应位置）：击中必殉爆
             const ammoHit = tt.ammoZone === 'rear'
-              ? (rx < -10 && Math.abs(ry) < 18)   // 美军：炮塔后方
-              : (Math.abs(ry) > 16 && Math.abs(rx) < 20); // 俄军：侧面中心
+              ? (rx < -12 && Math.abs(ry) < 15)   // 美军：炮塔后方（车体后部中央）
+              : (Math.abs(ry) > 15 && Math.abs(rx) < 16); // 俄军：侧面中心
             if (ammoHit) {
               // 弹药架殉爆：立即击毁（弱点命中无视反应装甲）
               q.alive = false;
