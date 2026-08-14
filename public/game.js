@@ -18,7 +18,8 @@
   // ---------------- 世界常量（与 server.js 一致） ----------------
   const WORLD = { w: 1600, h: 1200 };
   const WALL_T = 24;
-  const OBSTACLES = [
+  // 迷宫由服务器每回合随机生成并通过 map 消息下发；初始为简单占位布局
+  let mapObstacles = [
     { x: 330, y: 240, w: 240, h: 150 },
     { x: 1030, y: 240, w: 240, h: 150 },
     { x: 330, y: 810, w: 240, h: 150 },
@@ -43,6 +44,8 @@
     pingText: $('pingText'), btnMute: $('btnMute'), btnLeave: $('btnLeave'), btnPub: $('btnPub'),
     countdown: $('countdown'), banner: $('banner'), killfeed: $('killfeed'),
     hud: $('hud'), hpBar: $('hpBar'), hpText: $('hpText'), ammoBox: $('ammoBox'), buffs: $('buffs'),
+    partTrack: $('part-track'), partTurret: $('part-turret'), partEngine: $('part-engine'),
+    repairBar: $('repairBar'), damageNote: $('damageNote'),
     deathOverlay: $('deathOverlay'), deathText: $('deathText'),
     scoreboard: $('scoreboard'), sbRows: $('sbRows'),
     menu: $('menu'), nameInput: $('nameInput'), btnCreate: $('btnCreate'),
@@ -96,6 +99,8 @@
     boost: false,
   };
   const JOY_R = 58;
+  const JOY_DEAD = 12;    // 摇杆死区(px)：小位移不响应，防误触
+  const JOY_STEER = 0.85; // 转向灵敏度系数（略低于油门，避免转向过猛）
 
   let snaps = [];           // 快照缓冲
   let players = new Map();  // id -> 渲染状态
@@ -110,6 +115,8 @@
   let localMag = MAG_SIZE;      // 本地弹药显示（即时反馈）
   let localReload = 0;          // 本地换弹计时
   let localFireCd = 0;          // 本地开火冷却（仅用于弹药显示节奏）
+  let selfParts = { track: true, turret: true, engine: true }; // 本地部件状态（履带/炮塔/发动机）
+  let selfRepair = 0;           // 维修进度(秒)
 
   const keys = {};
   const mouse = { x: 0, y: 0, down: false, active: false };
@@ -243,6 +250,7 @@
         phaseT = m.phaseT || 0;
         winner = m.winner || null;
         lan = m.lan || lan;
+        if (Array.isArray(m.map) && m.map.length) mapObstacles = m.map;
         joined = true;
         browse = false;
         stopBrowse();
@@ -268,6 +276,12 @@
         if (m.publicUrl) { tunnelUrl = m.publicUrl; tunnelState = 'on'; }
         renderLobby(m.players);
         updateTunnelUI();
+        break;
+      }
+      case 'map': {
+        if (Array.isArray(m.obstacles) && m.obstacles.length) {
+          mapObstacles = m.obstacles; // 每回合新迷宫
+        }
         break;
       }
       case 'rooms': {
@@ -324,6 +338,13 @@
     selfBuffs = { shd: me.shd, rap: me.rap, trp: me.trp };
     // 弹药校正：与服务器偏差过大时以服务器为准
     if (me.mag != null && Math.abs(me.mag - localMag) > 2) localMag = me.mag;
+    // 部件状态同步（服务器权威）
+    if (Array.isArray(me.prt)) {
+      selfParts.track = me.prt[0];
+      selfParts.turret = me.prt[1];
+      selfParts.engine = me.prt[2];
+      selfRepair = me.rp || 0;
+    }
     if (!me.alive) { pred = null; return; }
     if (!pred) {
       pred = { x: me.x, y: me.y, a: me.a, ta: me.ta, vx: 0, vy: 0 };
@@ -351,6 +372,7 @@
         case 'hit':
           sfx.hit();
           spawnParticles(e.x, e.y, '#ff8a65', 7, 2.2);
+          if (e.id === myId) zoneNote(e.zone, e.parts);
           break;
         case 'boom':
           sfx.boom();
@@ -381,7 +403,14 @@
           break;
         case 'kill':
           sfx.kill();
-          addKillfeed(e.killer, e.victim);
+          addKillfeed(e.killer, e.victim, e.reason);
+          break;
+        case 'repair':
+          sfx.pick();
+          if (e.id === myId) {
+            const pname = { track: '履带', turret: '炮塔', engine: '发动机' }[e.part] || e.part;
+            showDamageNote('✅ ' + pname + ' 已修复', true);
+          }
           break;
         case 'join':
           addKillfeed(null, e.name + ' 加入');
@@ -393,10 +422,23 @@
       }
     }
   }
-  function addKillfeed(killer, victim) {
+  let noteTimer = null;
+  function showDamageNote(text, good) {
+    els.damageNote.textContent = text;
+    els.damageNote.classList.toggle('good', !!good);
+    show(els.damageNote, true);
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(() => show(els.damageNote, false), 2200);
+  }
+  function zoneNote(zone, parts) {
+    const zname = { front: '正面命中', side: '侧面命中', back: '背面命中' }[zone] || '命中';
+    const pnames = (parts || []).map((p) => ({ track: '履带', turret: '炮塔', engine: '发动机' }[p] || p)).join('、');
+    showDamageNote(pnames ? zname + '！' + pnames + ' 损坏' : zname + '！', false);
+  }
+  function addKillfeed(killer, victim, reason) {
     const div = document.createElement('div');
     div.className = 'kf';
-    if (killer) div.innerHTML = '<b>' + esc(killer) + '</b> 击毁 <i>' + esc(victim) + '</i>';
+    if (killer) div.innerHTML = '<b>' + esc(killer) + '</b> 击毁 <i>' + esc(victim) + '</i>' + (reason === '殉爆' ? ' <span style="color:#ffd54f">💥殉爆</span>' : '');
     else div.textContent = victim;
     els.killfeed.appendChild(div);
     while (els.killfeed.children.length > 5) els.killfeed.removeChild(els.killfeed.firstChild);
@@ -520,8 +562,15 @@
     let boost = !!(keys.ShiftLeft || keys.ShiftRight);
     if (touch.mode) {
       if (touch.move) {
-        thr = clamp(thr + (-touch.move.dy / JOY_R), -1, 1);
-        steer = clamp(steer + touch.move.dx / JOY_R, -1, 1);
+        // 摇杆轴：死区(12px) + 平方曲线，小推微动、大推全速，低速更精细
+        const len = Math.hypot(touch.move.dx, touch.move.dy);
+        if (len > JOY_DEAD) {
+          const t = Math.min(1, (len - JOY_DEAD) / (JOY_R - JOY_DEAD));
+          const mag = t * t;
+          const nx = touch.move.dx / len, ny = touch.move.dy / len;
+          thr = clamp(thr + (-ny * mag), -1, 1);
+          steer = clamp(steer + nx * mag * JOY_STEER, -1, 1);
+        }
       }
       if (touch.aim) {
         const len = Math.hypot(touch.aim.dx, touch.aim.dy);
@@ -552,7 +601,8 @@
     const tk = pred;
     const f = { x: Math.cos(tk.a), y: Math.sin(tk.a) };
     const px = -f.y, py = f.x;
-    const thr = inp.thr * (inp.thr < 0 ? TANK.back : 1);
+    // 部件效果：履带坏不能动，发动机坏限速
+    const thr = (selfParts.track ? inp.thr : 0) * (inp.thr < 0 ? TANK.back : 1);
     tk.vx += f.x * thr * TANK.accel * dt;
     tk.vy += f.y * thr * TANK.accel * dt;
     let fwd = tk.vx * f.x + tk.vy * f.y;
@@ -562,7 +612,7 @@
     lat *= Math.exp(-TANK.dragL * dt);
     tk.vx = f.x * fwd + px * lat;
     tk.vy = f.y * fwd + py * lat;
-    const spd = TANK.maxSpeed * (inp.boost ? TANK.boostMult : 1);
+    const spd = TANK.maxSpeed * (selfParts.engine ? 1 : 0.45) * (inp.boost ? TANK.boostMult : 1);
     const sp = Math.hypot(tk.vx, tk.vy);
     if (sp > spd) { tk.vx *= spd / sp; tk.vy *= spd / sp; }
     tk.x += tk.vx * dt;
@@ -578,7 +628,7 @@
     else if (tk.x > maxX) { tk.x = maxX; if (tk.vx > 0) tk.vx = -tk.vx * 0.3; }
     if (tk.y < minY) { tk.y = minY; if (tk.vy < 0) tk.vy = -tk.vy * 0.3; }
     else if (tk.y > maxY) { tk.y = maxY; if (tk.vy > 0) tk.vy = -tk.vy * 0.3; }
-    for (const o of OBSTACLES) {
+    for (const o of mapObstacles) {
       const cx = clamp(tk.x, o.x, o.x + o.w);
       const cy = clamp(tk.y, o.y, o.y + o.h);
       const dx = tk.x - cx, dy = tk.y - cy;
@@ -663,7 +713,7 @@
     ctx.lineWidth = 2;
     ctx.strokeRect(WALL_T, WALL_T, WORLD.w - WALL_T * 2, WORLD.h - WALL_T * 2);
     // 障碍
-    for (const o of OBSTACLES) {
+    for (const o of mapObstacles) {
       ctx.fillStyle = '#1c2740';
       rr(o.x, o.y, o.w, o.h, 8); ctx.fill();
       ctx.strokeStyle = '#33456b';
@@ -735,15 +785,23 @@
     ctx.save();
     ctx.translate(t.x, t.y);
     ctx.rotate(t.a);
-    // 履带
-    ctx.fillStyle = '#20293a';
+    // 履带（损坏时颜色变暗）
+    ctx.fillStyle = t.prt && !t.prt[0] ? '#3d322b' : '#20293a';
     rr(-24, -17, 48, 11, 4); ctx.fill();
     rr(-24, 6, 48, 11, 4); ctx.fill();
-    ctx.strokeStyle = '#2e3b52';
-    ctx.lineWidth = 1.5;
-    for (let i = -2; i <= 2; i++) {
-      ctx.beginPath(); ctx.moveTo(i * 8, -16.5); ctx.lineTo(i * 8, -7.5); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(i * 8, 7.5); ctx.lineTo(i * 8, 16.5); ctx.stroke();
+    if (t.prt && t.prt[0]) {
+      ctx.strokeStyle = '#2e3b52';
+      ctx.lineWidth = 1.5;
+      for (let i = -2; i <= 2; i++) {
+        ctx.beginPath(); ctx.moveTo(i * 8, -16.5); ctx.lineTo(i * 8, -7.5); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(i * 8, 7.5); ctx.lineTo(i * 8, 16.5); ctx.stroke();
+      }
+    } else {
+      // 履带断裂效果
+      ctx.strokeStyle = '#5a4633';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(-10, -12); ctx.lineTo(6, -12); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(2, 11); ctx.lineTo(18, 11); ctx.stroke();
     }
     // 车身
     ctx.fillStyle = color;
@@ -759,10 +817,10 @@
     ctx.moveTo(19, -7); ctx.lineTo(25, 0); ctx.lineTo(19, 7);
     ctx.closePath(); ctx.fill();
     ctx.restore();
-    // 炮塔
+    // 炮塔（损坏时炮管歪斜）
     ctx.save();
     ctx.translate(t.x, t.y);
-    ctx.rotate(t.ta);
+    ctx.rotate(t.ta + (t.prt && !t.prt[1] ? 0.5 : 0));
     ctx.fillStyle = '#39445c';
     rr(8, -3.5, 26, 7, 3); ctx.fill();
     ctx.fillStyle = '#d8dee9';
@@ -780,6 +838,15 @@
       ctx.strokeStyle = 'rgba(77, 208, 225, ' + pulse + ')';
       ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(t.x, t.y, 30, 0, Math.PI * 2); ctx.stroke();
+    }
+    // 发动机损坏：车尾冒烟
+    if (t.prt && !t.prt[2] && Math.random() < 0.25) {
+      particles.push({
+        x: t.x - Math.cos(t.a) * 24, y: t.y - Math.sin(t.a) * 24,
+        vx: -Math.cos(t.a) * 40 + (Math.random() - 0.5) * 30,
+        vy: -Math.sin(t.a) * 40 + (Math.random() - 0.5) * 30,
+        life: 0.8, maxLife: 0.8, size: 4 + Math.random() * 4, color: '#555566',
+      });
     }
     // 血条 & 名字
     const bw = 46;
@@ -840,7 +907,7 @@
     mmCtx.fillRect(0, 0, mm.width, mm.height);
     const sx = mm.width / WORLD.w, sy = mm.height / WORLD.h;
     mmCtx.fillStyle = '#1c2740';
-    for (const o of OBSTACLES) mmCtx.fillRect(o.x * sx, o.y * sy, o.w * sx, o.h * sy);
+    for (const o of mapObstacles) mmCtx.fillRect(o.x * sx, o.y * sy, o.w * sx, o.h * sy);
     mmCtx.strokeStyle = '#2c3e60';
     mmCtx.lineWidth = 2;
     mmCtx.strokeRect(1, 1, mm.width - 2, mm.height - 2);
@@ -865,6 +932,17 @@
   function updateHUD() {
     els.hpBar.innerHTML = '<i style="width:' + Math.round(clamp(selfHp / 100, 0, 1) * 100) + '%"></i>';
     els.hpText.textContent = Math.max(0, Math.round(selfHp)) + '/100';
+    // 部件状态显示
+    els.partTrack.classList.toggle('ok', selfParts.track);
+    els.partTurret.classList.toggle('ok', selfParts.turret);
+    els.partEngine.classList.toggle('ok', selfParts.engine);
+    // 维修进度
+    if (selfRepair > 0) {
+      els.repairBar.classList.remove('hidden');
+      els.repairBar.firstChild.style.width = Math.min(100, Math.round(selfRepair / 2.5 * 100)) + '%';
+    } else {
+      els.repairBar.classList.add('hidden');
+    }
     // 弹药显示
     if (localReload > 0) {
       els.ammoBox.textContent = '装填中 ' + Math.ceil(localReload) + 's';
@@ -1172,7 +1250,7 @@
       if (localReload <= 0) localMag = MAG_SIZE;
     }
     const inpNow = currentInput();
-    if (phase === 'play' && selfAlive && inpNow.shoot && localFireCd <= 0 && localMag > 0) {
+    if (phase === 'play' && selfAlive && selfParts.turret && inpNow.shoot && localFireCd <= 0 && localMag > 0) {
       localFireCd = selfBuffs.rap > 0 ? 0.14 : 0.35;
       localMag--;
       if (localMag <= 0) localReload = RELOAD_TIME;
@@ -1203,7 +1281,7 @@
       if (!src || src.x == null || !src.alive) { p.render = null; continue; }
       seen.add(p.id);
       if (p.id === myId && selfPos) {
-        p.render = { x: selfPos.x, y: selfPos.y, a: selfPos.a, ta: mouseAngle, hp: selfHp, shd: selfBuffs.shd };
+        p.render = { x: selfPos.x, y: selfPos.y, a: selfPos.a, ta: mouseAngle, hp: selfHp, shd: selfBuffs.shd, prt: [selfParts.track, selfParts.turret, selfParts.engine] };
       } else {
         const from = pa || src;
         const to = pb || src;
@@ -1215,6 +1293,7 @@
           ta: angLerp(from.ta, to.ta, f),
           hp: to.hp,
           shd: to.shd,
+          prt: to.prt || [true, true, true],
         };
       }
     }
