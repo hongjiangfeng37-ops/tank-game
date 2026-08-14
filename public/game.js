@@ -211,10 +211,10 @@
     ws = conn;
     lastPongAt = performance.now();
     conn.onopen = () => {
-      if (myIntent.join) conn.send(JSON.stringify({ t: 'join', name: myName, room: myIntent.room }));
+      if (myIntent.join) conn.send(JSON.stringify({ t: 'join', name: myName, room: myIntent.room, resume: myId }));
       else if (conn.__pendingJoin !== undefined) {
         // 连接建立期间玩家已点击加入：按待加入发送
-        conn.send(JSON.stringify({ t: 'join', name: myName, room: conn.__pendingJoin }));
+        conn.send(JSON.stringify({ t: 'join', name: myName, room: conn.__pendingJoin, resume: myId }));
       } else { conn.send(JSON.stringify({ t: 'list' })); startBrowse(); }
     };
     conn.onmessage = (ev) => {
@@ -845,153 +845,145 @@
     ctx.fillText(Math.ceil(pu.life) + 's', pu.x, pu.y - 22);
   }
 
+  // ---------------- 坦克贴图（SVG 精细绘制，车头朝右） ----------------
+  const TANK_SVG = {
+    usBody: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 84">' +
+      '<rect x="4" y="6" width="92" height="13" rx="5" fill="#1b222f"/>' +
+      '<rect x="4" y="65" width="92" height="13" rx="5" fill="#1b222f"/>' +
+      '<g fill="#39445c" stroke="#1b222f" stroke-width="1">' +
+      '<circle cx="14" cy="12.5" r="4"/><circle cx="27" cy="12.5" r="4"/><circle cx="40" cy="12.5" r="4"/><circle cx="53" cy="12.5" r="4"/><circle cx="66" cy="12.5" r="4"/><circle cx="79" cy="12.5" r="4"/><circle cx="90" cy="12.5" r="4"/>' +
+      '<circle cx="14" cy="71.5" r="4"/><circle cx="27" cy="71.5" r="4"/><circle cx="40" cy="71.5" r="4"/><circle cx="53" cy="71.5" r="4"/><circle cx="66" cy="71.5" r="4"/><circle cx="79" cy="71.5" r="4"/><circle cx="90" cy="71.5" r="4"/>' +
+      '</g>' +
+      '<rect x="8" y="21" width="82" height="5" rx="2" fill="#2a2f3a"/>' +
+      '<rect x="8" y="58" width="82" height="5" rx="2" fill="#2a2f3a"/>' +
+      '<g>' +
+      '<path d="M10,26 L88,26 L97,38 L97,46 L88,58 L10,58 Z" fill="#8d7d52"/>' +
+      '<path d="M10,26 L88,26 L97,38 L97,46 L88,58 L10,58 Z" fill="none" stroke="#3a3524" stroke-width="1.5"/>' +
+      '<path d="M30,28 L48,27 L52,34 L38,36 Z" fill="#5d5236"/>' +
+      '<path d="M60,30 L74,31 L70,40 L58,38 Z" fill="#6b5f40"/>' +
+      '<path d="M20,44 L40,43 L44,52 L26,54 Z" fill="#5d5236"/>' +
+      '<path d="M64,44 L82,45 L78,54 L60,52 Z" fill="#6b5f40"/>' +
+      '<path d="M88,28 L97,38 L97,46 L88,56 Z" fill="#a8956a"/>' +
+      '<line x1="88" y1="30" x2="97" y2="42" stroke="#3a3524" stroke-width="1"/>' +
+      '<rect x="6" y="30" width="6" height="24" fill="none" stroke="#2a2f3a" stroke-width="1.5"/>' +
+      '<line x1="6" y1="38" x2="12" y2="38" stroke="#2a2f3a" stroke-width="1"/>' +
+      '<line x1="6" y1="46" x2="12" y2="46" stroke="#2a2f3a" stroke-width="1"/>' +
+      '<rect x="95" y="34" width="2" height="4" fill="#d8c77a"/>' +
+      '<rect x="95" y="46" width="2" height="4" fill="#c96a5a"/>' +
+      '</g></svg>',
+    usTurret: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 90 56">' +
+      '<g>' +
+      '<path d="M6,10 L52,6 L62,16 L62,40 L52,50 L6,46 Z" fill="#8d7d52"/>' +
+      '<path d="M6,10 L52,6 L62,16 L62,40 L52,50 L6,46 Z" fill="none" stroke="#3a3524" stroke-width="1.5"/>' +
+      '<path d="M20,12 L40,10 L38,20 L24,20 Z" fill="#5d5236"/>' +
+      '<path d="M44,30 L60,28 L58,40 L42,40 Z" fill="#6b5f40"/>' +
+      '<rect x="0" y="14" width="8" height="28" fill="#7a6c46"/>' +
+      '<line x1="2" y1="20" x2="8" y2="20" stroke="#3a3524" stroke-width="1"/>' +
+      '<line x1="2" y1="28" x2="8" y2="28" stroke="#3a3524" stroke-width="1"/>' +
+      '<line x1="2" y1="36" x2="8" y2="36" stroke="#3a3524" stroke-width="1"/>' +
+      '</g>' +
+      '<circle cx="34" cy="16" r="3.5" fill="#2a2f3a"/>' +
+      '<circle cx="52" cy="30" r="3" fill="#2a2f3a"/>' +
+      '<rect x="60" y="25" width="26" height="6" rx="2" fill="#3a3524"/>' +
+      '<rect x="70" y="23.5" width="14" height="9" rx="3" fill="#5d5650"/>' +
+      '<rect x="84" y="26" width="5" height="4" fill="#d8dee9"/></svg>',
+    ruBody: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 78">' +
+      '<rect x="4" y="4" width="92" height="13" rx="5" fill="#171d17"/>' +
+      '<rect x="4" y="61" width="92" height="13" rx="5" fill="#171d17"/>' +
+      '<g fill="#33402f" stroke="#171d17" stroke-width="1">' +
+      '<circle cx="16" cy="10.5" r="4"/><circle cx="30" cy="10.5" r="4"/><circle cx="44" cy="10.5" r="4"/><circle cx="58" cy="10.5" r="4"/><circle cx="72" cy="10.5" r="4"/><circle cx="88" cy="10.5" r="4"/>' +
+      '<circle cx="16" cy="67.5" r="4"/><circle cx="30" cy="67.5" r="4"/><circle cx="44" cy="67.5" r="4"/><circle cx="58" cy="67.5" r="4"/><circle cx="72" cy="67.5" r="4"/><circle cx="88" cy="67.5" r="4"/>' +
+      '</g>' +
+      '<rect x="8" y="19" width="80" height="5" rx="2" fill="#2a3526"/>' +
+      '<rect x="8" y="54" width="80" height="5" rx="2" fill="#2a3526"/>' +
+      '<g fill="#55684c">' +
+      '<rect x="12" y="19.5" width="6" height="4"/><rect x="24" y="19.5" width="6" height="4"/><rect x="36" y="19.5" width="6" height="4"/><rect x="48" y="19.5" width="6" height="4"/><rect x="60" y="19.5" width="6" height="4"/><rect x="72" y="19.5" width="6" height="4"/>' +
+      '<rect x="12" y="54.5" width="6" height="4"/><rect x="24" y="54.5" width="6" height="4"/><rect x="36" y="54.5" width="6" height="4"/><rect x="48" y="54.5" width="6" height="4"/><rect x="60" y="54.5" width="6" height="4"/><rect x="72" y="54.5" width="6" height="4"/>' +
+      '</g>' +
+      '<g>' +
+      '<path d="M10,24 L78,24 L90,30 L96,35 L96,43 L90,48 L78,54 L10,54 Z" fill="#4a5a3a"/>' +
+      '<path d="M10,24 L78,24 L90,30 L96,35 L96,43 L90,48 L78,54 L10,54 Z" fill="none" stroke="#232e1c" stroke-width="1.5"/>' +
+      '<path d="M28,26 L48,25 L44,34 L30,34 Z" fill="#33402f"/>' +
+      '<path d="M58,28 L74,30 L70,40 L56,38 Z" fill="#3a4a2c"/>' +
+      '<path d="M18,42 L38,41 L42,50 L22,52 Z" fill="#33402f"/>' +
+      '<path d="M86,31 L96,39 L86,47 Z" fill="#5a6c48"/>' +
+      '<line x1="86" y1="33" x2="96" y2="39" stroke="#232e1c" stroke-width="1"/>' +
+      '<g stroke="#232e1c" stroke-width="0.8">' +
+      '<rect x="68" y="26" width="12" height="8" fill="#5a6c48"/>' +
+      '<rect x="82" y="28" width="10" height="7" fill="#5a6c48"/>' +
+      '<rect x="68" y="44" width="12" height="8" fill="#5a6c48"/>' +
+      '<rect x="82" y="43" width="10" height="7" fill="#5a6c48"/>' +
+      '</g>' +
+      '<rect x="94" y="36" width="3" height="6" fill="#c9b45c"/>' +
+      '</g></svg>',
+    ruTurret: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 90 60">' +
+      '<circle cx="36" cy="30" r="24" fill="#4a5a3a"/>' +
+      '<circle cx="36" cy="30" r="24" fill="none" stroke="#232e1c" stroke-width="1.5"/>' +
+      '<path d="M22,18 A24,24 0 0 1 48,14" fill="none" stroke="#5d7048" stroke-width="3" opacity="0.6"/>' +
+      '<g stroke="#232e1c" stroke-width="0.8" fill="#5a6c48">' +
+      '<rect x="44" y="14" width="10" height="7"/><rect x="56" y="18" width="8" height="6"/>' +
+      '<rect x="44" y="24" width="10" height="7"/><rect x="44" y="34" width="10" height="7"/>' +
+      '<rect x="56" y="38" width="8" height="6"/><rect x="44" y="44" width="10" height="7"/>' +
+      '</g>' +
+      '<circle cx="32" cy="24" r="4.5" fill="#2a3526"/>' +
+      '<circle cx="28" cy="34" r="3.5" fill="#2a3526"/>' +
+      '<rect x="58" y="27" width="28" height="6" rx="2" fill="#2a3526"/>' +
+      '<rect x="68" y="25.5" width="15" height="9" rx="3" fill="#55684c"/>' +
+      '<rect x="84" y="28" width="5" height="4" fill="#d8dee9"/></svg>',
+  };
+  const TANK_IMAGES = {};
+  (function loadTankImages() {
+    for (const k of Object.keys(TANK_SVG)) {
+      const img = new Image();
+      img.onload = () => { TANK_IMAGES[k] = img; };
+      img.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(TANK_SVG[k]);
+    }
+  })();
+
   function drawTank(p, now) {
     const t = p.render;
     const color = p.color;
     // 阴影
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
     ctx.beginPath(); ctx.ellipse(t.x, t.y + 5, 26, 20, t.a, 0, Math.PI * 2); ctx.fill();
-    // 车体
+    // 车体贴图（SVG 精细绘制；未加载完成前用简易色块兜底）
+    const trackOk = !t.prt || t.prt[0];
     ctx.save();
     ctx.translate(t.x, t.y);
     ctx.rotate(t.a);
-    // 履带（前后露出，带负重轮；损坏时颜色变暗+断裂）
-    const trackOk = !t.prt || t.prt[0];
-    ctx.fillStyle = trackOk ? '#1b222f' : '#3d322b';
-    rr(-27, -17, 54, 12, 5); ctx.fill();
-    rr(-27, 5, 54, 12, 5); ctx.fill();
-    if (trackOk) {
-      // 负重轮
-      ctx.fillStyle = '#2e3b52';
-      for (let i = -2; i <= 2; i++) {
-        ctx.beginPath(); ctx.arc(i * 11, -11, 3.6, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(i * 11, 11, 3.6, 0, Math.PI * 2); ctx.fill();
-      }
-      // 履带齿痕
-      ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-      ctx.lineWidth = 1;
-      for (let i = -2; i <= 2; i++) {
-        ctx.beginPath(); ctx.moveTo(i * 11, -16); ctx.lineTo(i * 11, -14); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(i * 11, 14); ctx.lineTo(i * 11, 16); ctx.stroke();
-      }
+    const bodyImg = t.ty === 'ru' ? TANK_IMAGES.ruBody : TANK_IMAGES.usBody;
+    if (bodyImg) {
+      ctx.drawImage(bodyImg, -50, -42, 100, 84);
     } else {
-      // 履带断裂效果
-      ctx.strokeStyle = '#5a4633';
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(-14, -12); ctx.lineTo(2, -12); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(6, 10); ctx.lineTo(22, 10); ctx.stroke();
-      ctx.fillStyle = 'rgba(0,0,0,0.5)';
-      ctx.beginPath(); ctx.arc(-4, -11, 3, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.arc(14, 11, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = color;
+      rr(-25, -13, 50, 26, 6); ctx.fill();
+      ctx.fillStyle = '#1b222f';
+      rr(-27, -17, 54, 11, 4); ctx.fill();
+      rr(-27, 6, 54, 11, 4); ctx.fill();
     }
-    // 车身与炮塔（按型号精细绘制：M1A2 楔形炮塔+尾舱+侧裙板 / T90M 圆形铸造炮塔+爆反阵列）
-    if (t.ty === 'ru') {
-      // ---- T90M：低矮车体，前部 V 形装甲，侧裙板 ----
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.moveTo(-26, -10); ctx.lineTo(10, -10); ctx.lineTo(20, -4); ctx.lineTo(24, 0); ctx.lineTo(20, 4); ctx.lineTo(10, 10); ctx.lineTo(-26, 10);
-      ctx.closePath(); ctx.fill();
-      ctx.strokeStyle = 'rgba(0,0,0,0.5)';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-      // 侧裙板（带爆反块）
-      ctx.fillStyle = 'rgba(0,0,0,0.28)';
-      ctx.fillRect(-25, -14, 44, 3.5);
-      ctx.fillRect(-25, 10.5, 44, 3.5);
-      ctx.fillStyle = 'rgba(90, 110, 80, 0.9)';
-      for (let i = 0; i < 4; i++) { ctx.fillRect(-22 + i * 11, -13.5, 6, 2.5); ctx.fillRect(-22 + i * 11, 11, 6, 2.5); }
-      // 车体前部爆反方块（Kontakt-5 风格）
-      ctx.fillStyle = 'rgba(0,0,0,0.4)';
-      for (let i = 0; i < 3; i++) { ctx.fillRect(-21 + i * 10, -7.5, 7, 5); ctx.fillRect(-21 + i * 10, 2.5, 7, 5); }
-      // 首上 V 形装甲线
-      ctx.strokeStyle = 'rgba(255,255,255,0.25)';
-      ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(24, -3); ctx.lineTo(14, 0); ctx.lineTo(24, 3); ctx.stroke();
-    } else {
-      // ---- M1A2：方形车体，首上楔形装甲，侧裙板 ----
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.moveTo(-26, -11); ctx.lineTo(14, -11); ctx.lineTo(22, -5); ctx.lineTo(24, 0); ctx.lineTo(22, 5); ctx.lineTo(14, 11); ctx.lineTo(-26, 11);
-      ctx.closePath(); ctx.fill();
-      ctx.strokeStyle = 'rgba(0,0,0,0.5)';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-      // 侧裙板
-      ctx.fillStyle = 'rgba(0,0,0,0.28)';
-      ctx.fillRect(-25, -14.5, 44, 3.5);
-      ctx.fillRect(-25, 11, 44, 3.5);
-      // 首上楔形装甲线
-      ctx.strokeStyle = 'rgba(255,255,255,0.25)';
-      ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(24, -4); ctx.lineTo(12, 0); ctx.lineTo(24, 4); ctx.stroke();
-      // 尾部储物篮（网格）
-      ctx.fillStyle = 'rgba(0,0,0,0.4)';
-      ctx.fillRect(-30, -8, 4, 16);
-      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(-30, -8, 4, 16);
-      ctx.beginPath(); ctx.moveTo(-30, -2); ctx.lineTo(-26, -2); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(-30, 2); ctx.lineTo(-26, 2); ctx.stroke();
+    // 履带损坏标记（断裂 + 冒烟点）
+    if (!trackOk) {
+      ctx.strokeStyle = '#5a4633';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.moveTo(-16, -13); ctx.lineTo(4, -13); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(2, 10); ctx.lineTo(20, 10); ctx.stroke();
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.beginPath(); ctx.arc(-6, -13, 3.5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(12, 10, 3.5, 0, Math.PI * 2); ctx.fill();
     }
     ctx.restore();
-    // 炮塔（损坏时炮管歪斜）
+    // 炮塔贴图（损坏时炮管歪斜）
     ctx.save();
     ctx.translate(t.x, t.y);
     ctx.rotate(t.ta + (t.prt && !t.prt[1] ? 0.5 : 0));
-    if (t.ty === 'ru') {
-      // T90M 圆形铸造炮塔 + 炮管热护套
-      ctx.fillStyle = '#4a5a48';
-      ctx.beginPath(); ctx.arc(0, 0, 12, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = 'rgba(0,0,0,0.5)';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-      // 炮塔前部爆反块
-      ctx.fillStyle = 'rgba(0,0,0,0.35)';
-      ctx.fillRect(2, -9, 4, 18);
-      ctx.fillRect(-10, -5, 3, 10);
-      // 观瞄舱
-      ctx.fillStyle = 'rgba(0,0,0,0.4)';
-      ctx.beginPath(); ctx.arc(-2, 0, 4.5, 0, Math.PI * 2); ctx.fill();
-      // 125mm 炮管（带热护套）
-      ctx.fillStyle = '#232c38';
-      rr(6, -3.2, 30, 6.4, 3); ctx.fill();
-      ctx.fillStyle = '#3a4656';
-      rr(18, -4, 16, 8, 3.5); ctx.fill(); // 热护套
-      ctx.fillStyle = '#d8dee9';
-      ctx.fillRect(34, -2, 5, 4);
+    const turImg = t.ty === 'ru' ? TANK_IMAGES.ruTurret : TANK_IMAGES.usTurret;
+    if (turImg) {
+      ctx.drawImage(turImg, -40, -30, 90, 60);
     } else {
-      // M1A2 楔形炮塔（前窄后宽）+ 尾舱
-      ctx.fillStyle = '#46524a';
-      ctx.beginPath();
-      ctx.moveTo(10, -9);
-      ctx.lineTo(14, -3);
-      ctx.lineTo(-6, -8);
-      ctx.lineTo(-13, -5);
-      ctx.lineTo(-13, 5);
-      ctx.lineTo(-6, 8);
-      ctx.lineTo(14, 3);
-      ctx.lineTo(10, 9);
-      ctx.closePath();
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(0,0,0,0.5)';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-      // 炮塔尾舱（储物篮）
-      ctx.fillStyle = 'rgba(0,0,0,0.35)';
-      ctx.fillRect(-20, -5, 6, 10);
-      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(-20, -5, 6, 10);
-      // 炮长镜
-      ctx.fillStyle = 'rgba(0,0,0,0.4)';
-      ctx.beginPath(); ctx.arc(6, 0, 2.5, 0, Math.PI * 2); ctx.fill();
-      // 120mm 炮管（带热护套）
+      ctx.fillStyle = t.ty === 'ru' ? '#4a5a48' : '#46524a';
+      ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#232c38';
       rr(6, -3, 30, 6, 3); ctx.fill();
-      ctx.fillStyle = '#3a4656';
-      rr(16, -3.8, 18, 7.6, 3.5); ctx.fill(); // 热护套
-      ctx.fillStyle = '#d8dee9';
-      ctx.fillRect(34, -2, 5, 4);
     }
     ctx.restore();
     // 玩家标识色环（炮塔基座，保留个人颜色识别）
@@ -1262,7 +1254,7 @@
         intent = { join: true, room: room || null };
         browse = false;
         stopBrowse();
-        ws.send(JSON.stringify({ t: 'join', name: myName, room: room || null }));
+        ws.send(JSON.stringify({ t: 'join', name: myName, room: room || null, resume: myId }));
       }
     } else if (ws && ws.readyState === 0) {
       // 连接建立中：把加入请求挂到连接上，onopen 时发送（避免浏览重连竞态覆盖意图）
@@ -1492,6 +1484,20 @@
       const pb = predBullets[i];
       pb.x += pb.vx * dt;
       pb.y += pb.vy * dt;
+      // 命中敌方坦克：本地子弹立即消失（与服务器一致，避免"击中后继续飞"）
+      let hitTank = false;
+      for (const p of players.values()) {
+        if (p.id === myId || !p.render) continue;
+        const r = p.render;
+        const dx = r.x - pb.x, dy = r.y - pb.y;
+        const rr = TANK.r + 7;
+        if (dx * dx + dy * dy < rr * rr) {
+          hitTank = true;
+          spawnParticles(pb.x, pb.y, '#ff8a65', 6, 2.2);
+          break;
+        }
+      }
+      if (hitTank) { predBullets.splice(i, 1); continue; }
       // 世界墙反弹
       if (pb.x < WALL_T + 5) { pb.x = WALL_T + 5; pb.vx = -pb.vx; }
       else if (pb.x > WORLD.w - WALL_T - 5) { pb.x = WORLD.w - WALL_T - 5; pb.vx = -pb.vx; }
