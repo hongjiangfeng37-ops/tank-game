@@ -1,0 +1,5 @@
+# 忽略本地/测试文件（云端部署不需要）
+bin/
+.edge-test-profile/
+shot-*.png
+node_modules/
