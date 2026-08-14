@@ -16,6 +16,7 @@ const os = require('os');
 const crypto = require('crypto');
 const { spawn, execFile } = require('child_process');
 const { downloadCloudflared } = require('./lib-download');
+const { segRectHit } = require('./lib-geom');
 
 // ---------------- 配置 ----------------
 const WANTED_PORT = parseInt(process.env.PORT || process.argv[2] || '8123', 10);
@@ -51,6 +52,8 @@ const SPAWNS = [
 ];
 const TANK = { r: 22, maxSpeed: 240, accel: 340, back: 0.62, turn: 3.2, dragF: 0.9, dragL: 3.8, hp: 100, boostMult: 1.3 };
 const BULLET = { speed: 620, r: 5, dmg: 30, bounces: 3, life: 3.5, cooldown: 0.35, rapidCd: 0.14 };
+const MAG_SIZE = 6;        // 弹匣容量
+const RELOAD_TIME = 1.4;   // 换弹时间(秒)
 const POWERUP = { max: 4, spawnEvery: 6, life: 20, r: 15 };
 const ROOM_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -265,6 +268,8 @@ function spawnPlayer(room, p, seat) {
   p.shield = false;
   p.rapid = 0;
   p.triple = 0;
+  p.mag = MAG_SIZE;
+  p.reloadT = 0;
 }
 
 function startRound(room) {
@@ -319,6 +324,11 @@ function sim(room, dt, now) {
     p.fireCd -= dt;
     const rapid = p.rapid > 0; p.rapid -= dt;
     const triple = p.triple > 0; p.triple -= dt;
+    // 换弹计时：装填完成后恢复弹匣
+    if (p.reloadT > 0) {
+      p.reloadT -= dt;
+      if (p.reloadT <= 0) p.mag = MAG_SIZE;
+    }
 
     const f = { x: Math.cos(tk.a), y: Math.sin(tk.a) };
     const px = -f.y, py = f.x;
@@ -343,15 +353,17 @@ function sim(room, dt, now) {
 
     collideTankWorld(tk);
 
-    // 开火
-    if (inp.shoot && p.fireCd <= 0) {
+    // 开火（弹匣制：打空自动换弹）
+    if (inp.shoot && p.fireCd <= 0 && p.mag > 0) {
       p.fireCd = rapid ? BULLET.rapidCd : BULLET.cooldown;
+      p.mag--;
+      if (p.mag <= 0) p.reloadT = RELOAD_TIME;
       const mx = tk.x + Math.cos(tk.ta) * 34;
       const my = tk.y + Math.sin(tk.ta) * 34;
       const fire = (ang) => {
         // 枪口若伸进障碍内部，沿炮管方向推出，避免子弹出生即被障碍吞掉
         let bx = mx, by = my;
-        for (let k = 0; k < 10; k++) {
+        for (let k = 0; k < 30; k++) {
           let inside = false;
           for (const o of OBSTACLES) {
             if (bx >= o.x && bx <= o.x + o.w && by >= o.y && by <= o.y + o.h) { inside = true; break; }
@@ -398,6 +410,7 @@ function sim(room, dt, now) {
   // ---- 子弹 ----
   for (let i = room.bullets.length - 1; i >= 0; i--) {
     const b = room.bullets[i];
+    const px = b.x, py = b.y;   // 上一帧位置（线段碰撞防隧穿）
     b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
     let dead = b.life <= 0;
 
@@ -407,19 +420,35 @@ function sim(room, dt, now) {
     if (!dead && b.y < WALL_T + BULLET.r) { b.y = WALL_T + BULLET.r; b.vy = -b.vy; if (--b.bounces < 0) dead = true; }
     if (!dead && b.y > WORLD.h - WALL_T - BULLET.r) { b.y = WORLD.h - WALL_T - BULLET.r; b.vy = -b.vy; if (--b.bounces < 0) dead = true; }
 
-    // 障碍反弹
+    // 障碍碰撞：线段检测（防高速隧穿穿墙），仅在真正撞击表面时反弹并消耗次数
     if (!dead) {
       for (const o of OBSTACLES) {
-        const cx = clamp(b.x, o.x, o.x + o.w);
-        const cy = clamp(b.y, o.y, o.y + o.h);
-        const dx = b.x - cx, dy = b.y - cy;
-        const d2 = dx * dx + dy * dy;
-        if (d2 < BULLET.r * BULLET.r) {
-          const d = Math.sqrt(d2) || 1;
-          const nx = dx / d, ny = dy / d;
-          b.x = cx + nx * BULLET.r; b.y = cy + ny * BULLET.r;
+        const hit = segRectHit(px, py, b.x, b.y, o);
+        if (hit) {
+          b.x = hit.x; b.y = hit.y;
+          const vn = b.vx * hit.nx + b.vy * hit.ny;
+          if (vn < 0) {
+            b.vx -= 2 * vn * hit.nx;
+            b.vy -= 2 * vn * hit.ny;
+            if (--b.bounces < 0) dead = true;
+          }
+          break;
+        }
+      }
+    }
+    // 兜底：子弹中心进入障碍内部（擦角/极端情况）→ 强制按最近表面推出并反弹，杜绝穿墙
+    if (!dead) {
+      for (const o of OBSTACLES) {
+        if (b.x > o.x && b.x < o.x + o.w && b.y > o.y && b.y < o.y + o.h) {
+          const dl = b.x - o.x, dr = o.x + o.w - b.x;
+          const dt = b.y - o.y, db = o.y + o.h - b.y;
+          const min = Math.min(dl, dr, dt, db);
+          let nx = 0, ny = 0;
+          if (min === dl) { b.x = o.x - BULLET.r; nx = -1; }
+          else if (min === dr) { b.x = o.x + o.w + BULLET.r; nx = 1; }
+          else if (min === dt) { b.y = o.y - BULLET.r; ny = -1; }
+          else { b.y = o.y + o.h + BULLET.r; ny = 1; }
           const vn = b.vx * nx + b.vy * ny;
-          // 仅在真正撞击表面时反弹并消耗次数；障碍内部(法线≈0)穿行不消耗
           if (vn < 0) {
             b.vx -= 2 * vn * nx; b.vy -= 2 * vn * ny;
             if (--b.bounces < 0) dead = true;
@@ -661,6 +690,8 @@ function broadcast(room) {
       shd: p.shield ? 1 : 0,
       rap: p.rapid > 0 ? Math.ceil(p.rapid) : 0,
       trp: p.triple > 0 ? Math.ceil(p.triple) : 0,
+      mag: p.mag,
+      rl: Math.round(p.reloadT * 10) / 10,
       kills: p.kills, wins: p.wins,
     };
   });
