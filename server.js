@@ -28,7 +28,7 @@ const MAX_PLAYERS = 8;
 const TICK_MS = 1000 / 60;
 const SNAP_EVERY = 1;          // 每 tick 广播一次快照 => 60Hz（更低延迟）
 const PING_EVERY = 20000;      // ws 心跳间隔
-const ALIVE_TIMEOUT = 45000;   // 心跳超时
+const ALIVE_TIMEOUT = 90000;   // 心跳超时（宽容：手机切后台/网络抖动不误杀）
 const MAX_MSG = 1 << 20;       // 单条消息上限 1MB
 
 // ---------------- 世界常量（与 public/game.js 保持一致） ----------------
@@ -202,7 +202,24 @@ function makeConn(socket) {
   socket.on('close', () => {
     if (conn.dead) return;
     conn.dead = true;
-    if (conn.player) { removePlayer(conn.player.room, conn.player); conn.player = null; }
+    if (conn.player) {
+      const p = conn.player;
+      conn.player = null;
+      // 断线保留机制：玩家保留 15 秒等待重连恢复（坦克不消失、不变旁观）
+      p.conn = null;
+      p.disconnected = true;
+      p.disconnectedAt = Date.now();
+      // 清零输入，防止断线坦克按最后指令继续行驶
+      p.input = { thr: 0, steer: 0, ta: p.input.ta, shoot: false, boost: false };
+      if (p.room) {
+        p.room.pendingEvents.push({ k: 'leave', name: p.name });
+        broadcastRoom(p.room);
+        clearTimeout(p.removeTimer);
+        p.removeTimer = setTimeout(() => {
+          if (p.disconnected) removePlayer(p.room, p);
+        }, 15000);
+      }
+    }
   });
   return conn;
 }
@@ -512,6 +529,9 @@ function sim(room, dt, now) {
     const px = b.x, py = b.y;   // 上一帧位置（线段碰撞防隧穿）
     b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
     let dead = b.life <= 0;
+    if (process.env.TK_DEBUG_BULLET3 === '1' && b.x > 1300 && b.x < 1550 && b.y < 200) {
+      console.log('[B3] ' + room.tick + ' x=' + Math.round(b.x) + ' y=' + Math.round(b.y) + ' v=' + Math.round(b.vx) + ',' + Math.round(b.vy) + ' px=' + Math.round(px) + ',' + Math.round(py));
+    }
 
     // 边界反弹
     if (!dead && b.x < WALL_T + BULLET.r) { b.x = WALL_T + BULLET.r; b.vx = -b.vx; if (--b.bounces < 0) dead = true; }
@@ -931,6 +951,31 @@ function onMessage(conn, buf) {
       const room = wantRoom ? rooms.get(wantRoom) : null;
       if (wantRoom && !room) { send(conn, { t: 'err', msg: '房间不存在或已关闭' }); conn.die(); return; }
       if (room && room.players.size >= MAX_PLAYERS) { send(conn, { t: 'err', msg: '房间已满（最多 ' + MAX_PLAYERS + ' 人）' }); conn.die(); return; }
+      // 断线恢复：用原玩家 id 匹配，恢复断线玩家的坦克与状态（不重新入座、不变旁观）
+      if (room && msg.resume) {
+        const old = room.players.get(String(msg.resume));
+        if (old && old.disconnected) {
+          clearTimeout(old.removeTimer);
+          old.disconnected = false;
+          old.conn = conn;
+          old.input = { thr: 0, steer: 0, ta: old.input.ta, shoot: false, boost: false };
+          conn.player = old;
+          send(conn, {
+            t: 'hello', id: old.id, name: old.name, code: room.code, hostId: room.hostId,
+            phase: room.phase, phaseT: Math.round(room.phaseT * 10) / 10, winner: room.winner,
+            lan: lanHint(),
+            publicUrl: tunnel.state === 'on' ? tunnel.url : null,
+            resume: true,
+            map: room.obstacles,
+            players: roster(room),
+            scores: scores(room),
+          });
+          room.pendingEvents.push({ k: 'join', name: old.name + '（已恢复）' });
+          broadcastRoom(room);
+          broadcast(room);
+          break;
+        }
+      }
       if (room) addPlayer(room, conn, name);
       else makeRoom(conn, name);
       break;
