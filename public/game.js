@@ -74,6 +74,7 @@
   let winner = null;
   let lan = '127.0.0.1';
   let ping = -1;
+  let lastPongAt = 0;       // 应用层心跳：最后收到 pong 的时间（检测僵尸连接）
   let intentionalClose = false;
   let reconnectTimer = null;
   let gameShown = false; // 是否已切换到战斗界面（HUD 显示）
@@ -208,6 +209,7 @@
     let conn;
     try { conn = new WebSocket(proto + location.host + '/ws'); } catch (e) { onConnFail('无法连接服务器'); return; }
     ws = conn;
+    lastPongAt = performance.now();
     conn.onopen = () => {
       if (myIntent.join) conn.send(JSON.stringify({ t: 'join', name: myName, room: myIntent.room }));
       else { conn.send(JSON.stringify({ t: 'list' })); startBrowse(); }
@@ -331,6 +333,7 @@
       }
       case 'pong': {
         ping = Math.round(performance.now() - m.ts);
+        lastPongAt = performance.now();
         break;
       }
       case 'err': {
@@ -1361,6 +1364,18 @@
   window.addEventListener('resize', resize);
 
   function update(now, dt) {
+    // 僵尸连接检测：7 秒无 pong 说明连接已被服务器丢弃（TCP 假活），强制断开重连
+    if (ws && performance.now() - lastPongAt > 7000) {
+      const deadWs = ws;
+      try { deadWs.close(); } catch (e) { /* ignore */ }
+      setTimeout(() => {
+        if (ws === deadWs) {
+          ws = null;
+          if (intent.join) connect(intent.room, { browse: false });
+          else ensureBrowse();
+        }
+      }, 600);
+    }
     // 输入发送 / 本地预测
     resize();
     sendInput(now);
