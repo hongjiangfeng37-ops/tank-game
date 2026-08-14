@@ -222,6 +222,33 @@ body.touch #deathOverlay { top: 12%; }
   align-items: center; justify-content: center; touch-action: none; user-select: none;
 }
 body.touch #boostBtn { display: flex; }
+
+/* ---------- 触屏十字方向键 ---------- */
+#dpad {
+  position: fixed; left: 14px; bottom: 14px; z-index: 11;
+  display: none; grid-template-columns: 54px 54px 54px; grid-template-rows: 54px 54px 54px; gap: 4px;
+}
+body.touch #dpad { display: grid; }
+.dpad-btn {
+  border-radius: 10px; border: 2px solid rgba(255, 255, 255, 0.3);
+  background: rgba(22, 35, 61, 0.55); color: rgba(255, 255, 255, 0.85);
+  font-size: 15px; touch-action: none; user-select: none; cursor: pointer;
+}
+.dpad-btn:active { background: rgba(79, 195, 247, 0.75); border-color: #4fc3f7; }
+#dpad-up { grid-column: 2; grid-row: 1; }
+#dpad-left { grid-column: 1; grid-row: 2; }
+#dpad-right { grid-column: 3; grid-row: 2; }
+#dpad-down { grid-column: 2; grid-row: 3; }
+
+/* ---------- 触屏开火键 ---------- */
+#btnFire {
+  position: fixed; right: 14px; top: 122px; width: 66px; height: 66px; border-radius: 50%;
+  background: rgba(255, 90, 90, 0.5); border: 2px solid #ff8a80; color: #fff;
+  font-size: 22px; z-index: 11; display: none;
+  align-items: center; justify-content: center; touch-action: none; user-select: none;
+}
+body.touch #btnFire { display: flex; }
+#btnFire:active { background: rgba(255, 90, 90, 0.85); }
 #rotHint {
   position: fixed; inset: 0; z-index: 40; display: none; flex-direction: column;
   align-items: center; justify-content: center; gap: 8px;
