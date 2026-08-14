@@ -1538,4 +1538,5 @@
   showMenu();
   resize();
   requestAnimationFrame(loop);
+  window.__gameBooted = true; // boot 完成标记（测试/调试用）
 })();
