@@ -1071,6 +1071,7 @@ setInterval(() => {
   for (const room of rooms.values()) {
     for (const p of room.players.values()) {
       const c = p.conn;
+      if (!c) continue; // 断线等待恢复的玩家：无连接，跳过心跳（否则 null 访问导致进程崩溃）
       if (now - c.aliveAt > ALIVE_TIMEOUT) c.die();
       else { try { c.socket.write(wsFrame(0x9, Buffer.alloc(0), false)); } catch (e) { /* ignore */ } }
     }
