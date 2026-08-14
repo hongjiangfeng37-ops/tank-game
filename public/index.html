@@ -29,7 +29,8 @@
 <!-- HUD -->
 <div id="hud" class="hidden">
   <div id="hpWrap"><div id="hpBar"></div><span id="hpText"></span></div>
-  <div id="ammoBox">🔫 6/6</div>
+  <div id="ammoBox">🔫 已装填</div>
+  <div id="eraBox">🛡️</div>
   <div id="partsBox">
     <span class="part" id="part-track" title="履带">🛞</span>
     <span class="part" id="part-turret" title="炮塔">🎯</span>
@@ -74,6 +75,19 @@
 <div id="lobby" class="panel hidden">
   <h2>房间 <span id="lobbyCode"></span></h2>
   <div id="lobbyLink"></div>
+  <div id="tankPick">
+    <div class="tpTitle">选择你的坦克</div>
+    <div class="tpCards">
+      <button class="tpCard" id="tp-us" data-type="us">
+        <span class="tpName">🇺🇸 美军 M1A2</span>
+        <span class="tpSpec">快移速 · 快装填(4s) · 弱点:炮塔后方弹药架</span>
+      </button>
+      <button class="tpCard" id="tp-ru" data-type="ru">
+        <span class="tpName">🇷🇺 俄军 T90M</span>
+        <span class="tpSpec">慢移速 · 倒车慢 · 正面极硬 · 弱点:侧面弹药架</span>
+      </button>
+    </div>
+  </div>
   <div id="tunnelBox">
     <button id="btnTunnel">🌐 开启公网联机</button>
     <div id="tunnelStatus"></div>
