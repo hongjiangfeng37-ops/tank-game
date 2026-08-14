@@ -212,7 +212,10 @@
     lastPongAt = performance.now();
     conn.onopen = () => {
       if (myIntent.join) conn.send(JSON.stringify({ t: 'join', name: myName, room: myIntent.room }));
-      else { conn.send(JSON.stringify({ t: 'list' })); startBrowse(); }
+      else if (conn.__pendingJoin !== undefined) {
+        // 连接建立期间玩家已点击加入：按待加入发送
+        conn.send(JSON.stringify({ t: 'join', name: myName, room: conn.__pendingJoin }));
+      } else { conn.send(JSON.stringify({ t: 'list' })); startBrowse(); }
     };
     conn.onmessage = (ev) => {
       let m;
@@ -1188,8 +1191,10 @@
         ws.send(JSON.stringify({ t: 'join', name: myName, room: room || null }));
       }
     } else if (ws && ws.readyState === 0) {
+      // 连接建立中：把加入请求挂到连接上，onopen 时发送（避免浏览重连竞态覆盖意图）
       if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-      intent = { join: true, room: room || null }; // 连接建立后自动加入
+      intent = { join: true, room: room || null };
+      ws.__pendingJoin = room || null;
     } else {
       connect(room);
     }
