@@ -575,6 +575,11 @@ async function startTunnel() {
     broadcastTunnel({ state: 'error', error: '此环境未启用公网联机' });
     return;
   }
+  // 云端/服务器部署(Linux等)本身就有公网地址，无需再开隧道
+  if (process.platform !== 'win32') {
+    broadcastTunnel({ state: 'error', error: '云端/服务器部署无需公网通道：当前网址即为公网地址，直接把网址发给好友即可。' });
+    return;
+  }
   tunnel.state = 'starting';
   tunnelError = '';
   broadcastTunnel({ state: 'starting' });
