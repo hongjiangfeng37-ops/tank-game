@@ -26,6 +26,8 @@
     { x: 700, y: 525, w: 200, h: 150 },
   ];
   const TANK = { r: 22, maxSpeed: 240, accel: 340, back: 0.62, turn: 3.2, dragF: 0.9, dragL: 3.8, hp: 100, boostMult: 1.3 };
+  const MAG_SIZE = 6;       // 弹匣容量（与 server.js 一致）
+  const RELOAD_TIME = 1.4;  // 换弹时间（与 server.js 一致）
   const PALETTE = ['#ff5d5d', '#4fc3f7', '#66bb6a', '#ffee58', '#ff8a65', '#ba68c8', '#4dd0e1', '#f06292', '#aed581', '#90a4ae'];
   const PUP_COLOR = { health: '#4caf50', shield: '#4dd0e1', rapid: '#ffca28', triple: '#ff7043' };
   const PUP_ICON = { health: '回血', shield: '护盾', rapid: '速射', triple: '三连' };
@@ -40,7 +42,7 @@
     topbar: $('topbar'), codeText: $('codeText'), btnCopy: $('btnCopy'),
     pingText: $('pingText'), btnMute: $('btnMute'), btnLeave: $('btnLeave'), btnPub: $('btnPub'),
     countdown: $('countdown'), banner: $('banner'), killfeed: $('killfeed'),
-    hud: $('hud'), hpBar: $('hpBar'), hpText: $('hpText'), buffs: $('buffs'),
+    hud: $('hud'), hpBar: $('hpBar'), hpText: $('hpText'), ammoBox: $('ammoBox'), buffs: $('buffs'),
     deathOverlay: $('deathOverlay'), deathText: $('deathText'),
     scoreboard: $('scoreboard'), sbRows: $('sbRows'),
     menu: $('menu'), nameInput: $('nameInput'), btnCreate: $('btnCreate'),
@@ -105,6 +107,9 @@
   let selfHp = 100;
   let selfAlive = false;
   let selfBuffs = { shd: 0, rap: 0, trp: 0 };
+  let localMag = MAG_SIZE;      // 本地弹药显示（即时反馈）
+  let localReload = 0;          // 本地换弹计时
+  let localFireCd = 0;          // 本地开火冷却（仅用于弹药显示节奏）
 
   const keys = {};
   const mouse = { x: 0, y: 0, down: false, active: false };
@@ -317,6 +322,8 @@
     selfAlive = me.alive;
     selfHp = me.hp;
     selfBuffs = { shd: me.shd, rap: me.rap, trp: me.trp };
+    // 弹药校正：与服务器偏差过大时以服务器为准
+    if (me.mag != null && Math.abs(me.mag - localMag) > 2) localMag = me.mag;
     if (!me.alive) { pred = null; return; }
     if (!pred) {
       pred = { x: me.x, y: me.y, a: me.a, ta: me.ta, vx: 0, vy: 0 };
@@ -610,7 +617,12 @@
     if (follow) {
       camTarget.x = selfPos.x;
       camTarget.y = selfPos.y;
-      camTarget.s = Math.max(0.7, Math.min(vw / 1000, vh / 760));
+      if (touch.mode) {
+        // 手机屏小：放大视野聚焦自身，坦克更大更清晰
+        camTarget.s = Math.max(1.0, Math.min(vw / 700, vh / 450));
+      } else {
+        camTarget.s = Math.max(0.7, Math.min(vw / 1000, vh / 760));
+      }
     } else {
       camTarget.x = WORLD.w / 2;
       camTarget.y = WORLD.h / 2;
@@ -853,6 +865,14 @@
   function updateHUD() {
     els.hpBar.innerHTML = '<i style="width:' + Math.round(clamp(selfHp / 100, 0, 1) * 100) + '%"></i>';
     els.hpText.textContent = Math.max(0, Math.round(selfHp)) + '/100';
+    // 弹药显示
+    if (localReload > 0) {
+      els.ammoBox.textContent = '装填中 ' + Math.ceil(localReload) + 's';
+      els.ammoBox.classList.add('reloading');
+    } else {
+      els.ammoBox.textContent = '🔫 ' + localMag + '/' + MAG_SIZE;
+      els.ammoBox.classList.remove('reloading');
+    }
     els.buffs.innerHTML = '';
     if (selfBuffs.shd) addBuff('护盾', 'b-shield', selfBuffs.shd);
     if (selfBuffs.rap) addBuff('速射', 'b-rapid', selfBuffs.rap);
@@ -1145,6 +1165,18 @@
     // 输入发送 / 本地预测
     resize();
     sendInput(now);
+    // 弹药本地模拟（开火即时扣减，服务器快照校正）
+    localFireCd -= dt;
+    if (localReload > 0) {
+      localReload -= dt;
+      if (localReload <= 0) localMag = MAG_SIZE;
+    }
+    const inpNow = currentInput();
+    if (phase === 'play' && selfAlive && inpNow.shoot && localFireCd <= 0 && localMag > 0) {
+      localFireCd = selfBuffs.rap > 0 ? 0.14 : 0.35;
+      localMag--;
+      if (localMag <= 0) localReload = RELOAD_TIME;
+    }
     sendPing(now);
     stepPred(dt);
 
