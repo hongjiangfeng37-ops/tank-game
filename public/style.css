@@ -1,0 +1,218 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #0b0f1a; }
+body { font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif; color: #dbe4f5; user-select: none; -webkit-touch-callout: none; }
+
+#game {
+  position: fixed; inset: 0;
+  width: 100vw; height: 100vh;   /* canvas 是替换元素，必须显式尺寸才会铺满视口 */
+  display: block; cursor: crosshair; touch-action: none;
+}
+
+.hidden { display: none !important; }
+
+/* ---------- 面板 ---------- */
+.panel {
+  position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: 360px; max-width: 92vw; max-height: 94vh; overflow-y: auto; padding: 26px 28px;
+  background: rgba(13, 18, 32, 0.92); border: 1px solid rgba(79, 195, 247, 0.35);
+  border-radius: 14px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+  text-align: center; z-index: 20;
+}
+.panel h1 { font-size: 30px; letter-spacing: 2px; color: #fff; margin-bottom: 4px; }
+.panel h2 { font-size: 22px; color: #fff; margin-bottom: 10px; }
+.panel .sub { color: #8fa3c8; font-size: 13px; margin-bottom: 18px; }
+.panel input {
+  width: 100%; padding: 10px 12px; margin-bottom: 10px;
+  background: #101828; border: 1px solid #2a3a5c; border-radius: 8px;
+  color: #e8f0ff; font-size: 15px; text-align: center; outline: none;
+}
+.panel input:focus { border-color: #4fc3f7; }
+.panel .row { display: flex; gap: 8px; margin-bottom: 8px; }
+.panel .row input.join { flex: 1; margin-bottom: 0; }
+.panel button {
+  flex: 1; padding: 10px 0; border: 1px solid #2a3a5c; border-radius: 8px;
+  background: #16233d; color: #dbe4f5; font-size: 15px; cursor: pointer; transition: all .15s;
+}
+.panel button:hover { background: #1e3050; border-color: #4fc3f7; }
+.panel button.primary { background: #1d7fd6; border-color: #1d7fd6; color: #fff; font-weight: bold; }
+.panel button.primary:hover { background: #2b90ea; }
+#errMsg { color: #ff6b6b; font-size: 13px; min-height: 18px; margin: 6px 0; }
+.panel .tips { margin-top: 14px; text-align: left; font-size: 12px; color: #7e92b8; line-height: 1.9; border-top: 1px dashed #22334f; padding-top: 12px; }
+
+/* ---------- 顶部栏 ---------- */
+#topbar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 10;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 14px; font-size: 13px;
+  background: linear-gradient(rgba(8, 12, 22, 0.75), transparent);
+}
+#roomInfo { display: flex; align-items: center; gap: 8px; color: #9db1d6; }
+#roomInfo b { color: #ffd54f; font-size: 15px; letter-spacing: 2px; }
+#pingBox { color: #9db1d6; }
+.topright { display: flex; gap: 8px; }
+button.mini {
+  padding: 4px 10px; font-size: 12px; border-radius: 6px;
+  background: rgba(22, 35, 61, 0.8); border: 1px solid #2a3a5c; color: #c6d4ee; cursor: pointer;
+}
+button.mini:hover { border-color: #4fc3f7; }
+
+/* ---------- HUD ---------- */
+#hud { position: fixed; left: 14px; bottom: 14px; z-index: 10; width: 260px; }
+#hpWrap { display: flex; align-items: center; gap: 8px; }
+#hpBar {
+  flex: 1; height: 14px; border-radius: 7px; overflow: hidden;
+  background: rgba(10, 15, 28, 0.8); border: 1px solid #2a3a5c;
+}
+#hpBar i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, #66bb6a, #aeea8a); transition: width .12s; }
+#hpText { font-size: 12px; color: #c6d4ee; width: 34px; text-align: right; }
+#buffs { display: flex; gap: 6px; margin-top: 6px; min-height: 24px; }
+.buff {
+  display: flex; align-items: center; gap: 4px; padding: 2px 8px; font-size: 12px;
+  border-radius: 10px; background: rgba(10, 15, 28, 0.8); border: 1px solid #2a3a5c;
+}
+.buff.b-shield { border-color: #4dd0e1; color: #4dd0e1; }
+.buff.b-rapid { border-color: #ffca28; color: #ffca28; }
+.buff.b-triple { border-color: #ff7043; color: #ff7043; }
+
+/* ---------- 记分板 ---------- */
+#scoreboard {
+  position: fixed; right: 14px; top: 44px; z-index: 10; width: 200px;
+  background: rgba(10, 15, 28, 0.78); border: 1px solid #22334f; border-radius: 10px;
+  padding: 8px 10px; font-size: 12px; backdrop-filter: blur(4px);
+}
+.sbTitle { color: #8fa3c8; font-size: 11px; margin-bottom: 5px; letter-spacing: 1px; }
+#sbRows .sbrow { display: flex; justify-content: space-between; padding: 2px 0; color: #c6d4ee; }
+#sbRows .sbrow.me { color: #fff; font-weight: bold; }
+#sbRows .sbrow .k { color: #ffd54f; }
+
+/* ---------- 击杀播报 ---------- */
+#killfeed {
+  position: fixed; right: 14px; top: 150px; z-index: 10; width: 230px;
+  display: flex; flex-direction: column; gap: 4px; align-items: flex-end;
+  pointer-events: none;
+}
+.kf { font-size: 12px; color: #e8f0ff; background: rgba(10, 15, 28, 0.7); padding: 4px 10px; border-radius: 6px; animation: kfin .25s ease; }
+.kf b { color: #ff8a65; }
+.kf i { color: #ff5d5d; font-style: normal; }
+@keyframes kfin { from { transform: translateX(30px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* ---------- 倒计时 / 横幅 ---------- */
+#countdown {
+  position: fixed; left: 50%; top: 38%; transform: translate(-50%, -50%); z-index: 15;
+  font-size: 110px; font-weight: 900; color: #ffd54f;
+  text-shadow: 0 0 30px rgba(255, 213, 79, 0.6), 0 4px 10px rgba(0,0,0,0.6);
+  animation: pop .4s ease;
+}
+@keyframes pop { from { transform: translate(-50%, -50%) scale(1.6); opacity: 0; } to { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
+#banner {
+  position: fixed; left: 50%; top: 42%; transform: translate(-50%, -50%); z-index: 15;
+  font-size: 42px; font-weight: 900; color: #fff; text-align: center;
+  text-shadow: 0 0 40px rgba(79, 195, 247, 0.8), 0 4px 10px rgba(0,0,0,0.7);
+  animation: ban .35s ease; white-space: nowrap;
+}
+@keyframes ban { from { transform: translate(-50%, -50%) scale(0.6); opacity: 0; } to { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
+
+/* ---------- 死亡遮罩 ---------- */
+#deathOverlay {
+  position: fixed; left: 50%; top: 18%; transform: translateX(-50%); z-index: 12;
+  font-size: 20px; color: #ff8a80; background: rgba(10, 15, 28, 0.7);
+  padding: 8px 22px; border-radius: 20px; border: 1px solid rgba(255, 138, 128, 0.4);
+}
+
+/* ---------- 小地图 ---------- */
+#minimap {
+  position: fixed; right: 14px; bottom: 14px; z-index: 10;
+  border: 1px solid #22334f; border-radius: 8px; background: rgba(10, 15, 28, 0.8);
+}
+
+/* ---------- 连接遮罩 ---------- */
+#connOverlay {
+  position: fixed; inset: 0; z-index: 30; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 16px;
+  background: rgba(8, 11, 20, 0.9); color: #9db1d6; font-size: 15px;
+}
+.spin {
+  width: 42px; height: 42px; border-radius: 50%;
+  border: 4px solid #22334f; border-top-color: #4fc3f7;
+  animation: rot 0.9s linear infinite;
+}
+@keyframes rot { to { transform: rotate(360deg); } }
+#btnConnCancel { padding: 8px 18px; border-radius: 8px; background: #16233d; border: 1px solid #2a3a5c; color: #c6d4ee; cursor: pointer; }
+
+/* ---------- 大厅 ---------- */
+#playerList { margin: 12px 0; text-align: left; }
+.plrow {
+  display: flex; align-items: center; gap: 8px; padding: 6px 10px; margin-bottom: 6px;
+  background: #101828; border: 1px solid #22334f; border-radius: 8px; font-size: 14px;
+}
+.plrow .dot { width: 10px; height: 10px; border-radius: 50%; }
+.plrow .crown { color: #ffd54f; font-size: 12px; }
+.plrow.host { border-color: rgba(255, 213, 79, 0.5); }
+#lobbyLink { font-size: 12px; color: #7e92b8; word-break: break-all; margin-bottom: 6px; }
+#lobbyHint { font-size: 12px; color: #7e92b8; margin-top: 10px; }
+
+/* ---------- 局域网房间列表 ---------- */
+#lanRooms { margin: 4px 0 10px; text-align: left; border-top: 1px dashed #22334f; padding-top: 10px; }
+.lrTitle { display: flex; justify-content: space-between; align-items: center; color: #8fa3c8; font-size: 12px; margin-bottom: 6px; }
+#roomList { max-height: 130px; overflow-y: auto; }
+#roomList .empty { color: #5d6f92; font-size: 12px; padding: 8px 2px; text-align: center; }
+#roomList .rrow {
+  display: flex; align-items: center; gap: 8px; padding: 7px 10px; margin-bottom: 5px;
+  background: #101828; border: 1px solid #22334f; border-radius: 8px; font-size: 13px;
+  cursor: pointer; transition: border-color .12s;
+}
+#roomList .rrow:hover { border-color: #4fc3f7; }
+#roomList .rrow b { color: #ffd54f; letter-spacing: 1px; }
+#roomList .rrow .rn { flex: 1; color: #c6d4ee; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#roomList .rrow .rc { color: #8fa3c8; font-size: 12px; }
+#roomList .rrow .rp { color: #4fc3f7; font-size: 12px; }
+
+/* ---------- 公网联机 ---------- */
+#tunnelBox { margin: 6px 0 10px; }
+#tunnelBox #btnTunnel {
+  width: 100%; padding: 9px 0; border-radius: 8px; cursor: pointer;
+  background: #14532d; border: 1px solid #2f9e5f; color: #a7f3c0; font-size: 14px; transition: all .15s;
+}
+#tunnelBox #btnTunnel:hover:not(:disabled) { background: #166534; }
+#tunnelBox #btnTunnel:disabled { opacity: 0.6; cursor: wait; }
+#tunnelStatus { margin-top: 8px; font-size: 12px; color: #7e92b8; word-break: break-all; line-height: 1.7; text-align: left; }
+#tunnelStatus .pubLink { color: #9db1d6; }
+#tunnelStatus a { color: #4fc3f7; display: block; margin: 2px 0; }
+#tunnelStatus .mini { margin-top: 2px; }
+
+/* ---------- 触屏 ---------- */
+/* ---------- 触屏（手机）布局：避让摇杆区域 ---------- */
+body.touch #minimap { display: none; }              /* 右下角让给瞄准摇杆 */
+body.touch #hud { top: 10px; bottom: auto; left: 50%; transform: translateX(-50%); width: 240px; }  /* HUD 移到顶部，让出左下移动摇杆 */
+body.touch #scoreboard { left: 12px; right: auto; top: 44px; }  /* 记分板移到左侧 */
+body.touch #boostBtn { top: 52px; bottom: auto; right: 14px; width: 58px; height: 58px; }  /* 加速键移出瞄准区 */
+body.touch #killfeed { right: 12px; top: 120px; }
+body.touch button.mini { padding: 8px 12px; font-size: 13px; }
+body.touch #countdown { font-size: 84px; }
+body.touch #deathOverlay { top: 12%; }
+
+#boostBtn {
+  position: fixed; right: 16px; bottom: 148px; width: 64px; height: 64px; border-radius: 50%;
+  background: rgba(22, 35, 61, 0.72); border: 2px solid #ffd54f; color: #ffd54f;
+  font-size: 13px; font-weight: bold; z-index: 11; display: none;
+  align-items: center; justify-content: center; touch-action: none; user-select: none;
+}
+body.touch #boostBtn { display: flex; }
+#rotHint {
+  position: fixed; inset: 0; z-index: 40; display: none; flex-direction: column;
+  align-items: center; justify-content: center; gap: 8px;
+  background: rgba(8, 11, 20, 0.93); color: #9db1d6; font-size: 18px; text-align: center;
+}
+#rotHint small { color: #5d6f92; font-size: 13px; }
+body.touch.portrait #rotHint { display: flex; }
+
+/* ---------- 小屏适配 ---------- */
+@media (max-width: 640px) {
+  #scoreboard { width: 148px; font-size: 11px; }
+  #banner { font-size: 26px; white-space: normal; }
+  #countdown { font-size: 80px; }
+  #hud { width: 190px; }
+  #minimap { width: 110px; height: 82px; }
+  .panel { padding: 18px 16px; }
+  #killfeed { top: 130px; width: 180px; }
+}
