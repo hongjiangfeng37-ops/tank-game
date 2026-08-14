@@ -27,8 +27,11 @@
     { x: 700, y: 525, w: 200, h: 150 },
   ];
   const TANK = { r: 22, maxSpeed: 240, accel: 340, back: 0.62, turn: 3.2, dragF: 0.9, dragL: 3.8, hp: 100, boostMult: 1.3 };
-  const MAG_SIZE = 6;       // 弹匣容量（与 server.js 一致）
-  const RELOAD_TIME = 1.4;  // 换弹时间（与 server.js 一致）
+  const MAG_SIZE = 1;       // 弹匣容量：单发装填（与 server.js 一致）
+  const TANK_TYPES = {      // 客户端展示用（与 server.js 一致）
+    us: { name: '美军 M1A2', reload: 4, era: 2, color: '#6b8e5a' },
+    ru: { name: '俄军 T90M', reload: 6, era: 3, color: '#5f7a52' },
+  };
   const PALETTE = ['#ff5d5d', '#4fc3f7', '#66bb6a', '#ffee58', '#ff8a65', '#ba68c8', '#4dd0e1', '#f06292', '#aed581', '#90a4ae'];
   const PUP_COLOR = { health: '#4caf50', shield: '#4dd0e1', rapid: '#ffca28', triple: '#ff7043' };
   const PUP_ICON = { health: '回血', shield: '护盾', rapid: '速射', triple: '三连' };
@@ -43,7 +46,8 @@
     topbar: $('topbar'), codeText: $('codeText'), btnCopy: $('btnCopy'),
     pingText: $('pingText'), btnMute: $('btnMute'), btnLeave: $('btnLeave'), btnPub: $('btnPub'),
     countdown: $('countdown'), banner: $('banner'), killfeed: $('killfeed'),
-    hud: $('hud'), hpBar: $('hpBar'), hpText: $('hpText'), ammoBox: $('ammoBox'), buffs: $('buffs'),
+    hud: $('hud'), hpBar: $('hpBar'), hpText: $('hpText'), ammoBox: $('ammoBox'), eraBox: $('eraBox'), buffs: $('buffs'),
+    tpUs: $('tp-us'), tpRu: $('tp-ru'),
     partTrack: $('part-track'), partTurret: $('part-turret'), partEngine: $('part-engine'),
     partAmmo: $('part-ammo'), partOptics: $('part-optics'),
     repairBar: $('repairBar'), damageNote: $('damageNote'),
@@ -114,9 +118,11 @@
   let localReload = 0;          // 本地换弹计时
   let localFireCd = 0;          // 本地开火冷却（仅用于弹药显示节奏）
   let predBullets = [];         // 本地预测子弹（自己开火即时显示，服务器快照接管前使用）
-  let selfParts = { track: true, turret: true, engine: true, ammo: true, optics: true }; // 本地部件状态
+  let selfParts = { track: true, turret: true, engine: true, ammo: true, optics: true, loader: true }; // 本地部件状态
   let selfRepair = 0;           // 维修进度(秒)
   let selfFire = 0;             // 起火剩余秒数
+  let selfType = 'us';          // 坦克型号
+  let selfEra = 2;              // 反应装甲层数
 
   const keys = {};
   const mouse = { x: 0, y: 0, down: false, active: false };
@@ -346,8 +352,11 @@
       selfParts.engine = me.prt[2];
       selfParts.ammo = me.prt[3];
       selfParts.optics = me.prt[4];
+      selfParts.loader = me.prt[5] !== false;
       selfRepair = me.rp || 0;
       selfFire = me.fr || 0;
+      if (me.ty) selfType = me.ty;
+      if (me.era != null) selfEra = me.era;
     }
     if (!me.alive) { pred = null; return; }
     if (!pred) {
@@ -847,25 +856,44 @@
       ctx.beginPath(); ctx.moveTo(-10, -12); ctx.lineTo(6, -12); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(2, 11); ctx.lineTo(18, 11); ctx.stroke();
     }
-    // 车身
+    // 车身（按型号：M1A2 方车体+尾部储物架 / T90M 圆润车体+爆反）
     ctx.fillStyle = color;
-    rr(-19, -13, 38, 26, 6); ctx.fill();
-    ctx.fillStyle = 'rgba(0,0,0,0.22)';
-    rr(-19, -13, 38, 26, 6); ctx.fill(); // 阴影叠层(简化)
-    ctx.strokeStyle = 'rgba(0,0,0,0.45)';
-    ctx.lineWidth = 1.5;
-    rr(-19, -13, 38, 26, 6); ctx.stroke();
-    // 车头
-    ctx.fillStyle = 'rgba(255,255,255,0.35)';
-    ctx.beginPath();
-    ctx.moveTo(19, -7); ctx.lineTo(25, 0); ctx.lineTo(19, 7);
-    ctx.closePath(); ctx.fill();
+    if (t.ty === 'ru') {
+      rr(-19, -12, 38, 24, 8); ctx.fill();                          // 低矮圆润车体
+      ctx.fillStyle = 'rgba(0,0,0,0.22)';
+      rr(-19, -12, 38, 24, 8); ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+      ctx.lineWidth = 1.5;
+      rr(-19, -12, 38, 24, 8); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(19, -6); ctx.lineTo(25, 0); ctx.lineTo(19, 6); ctx.closePath(); ctx.fill(); // 车头
+      ctx.fillStyle = 'rgba(255,255,255,0.3)';                       // 爆反方块
+      for (let i = 0; i < 3; i++) ctx.fillRect(-15 + i * 9, -8, 6, 5);
+      for (let i = 0; i < 3; i++) ctx.fillRect(-15 + i * 9, 3, 6, 5);
+    } else {
+      rr(-19, -13, 38, 26, 4); ctx.fill();                           // 方形车体
+      ctx.fillStyle = 'rgba(0,0,0,0.22)';
+      rr(-19, -13, 38, 26, 4); ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+      ctx.lineWidth = 1.5;
+      rr(-19, -13, 38, 26, 4); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';                       // 车头
+      ctx.beginPath();
+      ctx.moveTo(19, -7); ctx.lineTo(25, 0); ctx.lineTo(19, 7);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';                             // 尾部储物架
+      ctx.fillRect(-27, -10, 7, 20);
+      ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(-27, -10, 7, 20);
+      ctx.beginPath(); ctx.moveTo(-27, -2); ctx.lineTo(-20, -2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-27, 2); ctx.lineTo(-20, 2); ctx.stroke();
+    }
     ctx.restore();
-    // 炮塔（损坏时炮管歪斜）
+    // 炮塔（损坏时炮管歪斜；T90M 为圆形炮塔）
     ctx.save();
     ctx.translate(t.x, t.y);
     ctx.rotate(t.ta + (t.prt && !t.prt[1] ? 0.5 : 0));
-    ctx.fillStyle = '#39445c';
+    ctx.fillStyle = t.ty === 'ru' ? '#3a4a3a' : '#39445c';
     rr(8, -3.5, 26, 7, 3); ctx.fill();
     ctx.fillStyle = '#d8dee9';
     ctx.fillRect(30, -2, 5, 4);
@@ -873,7 +901,11 @@
     ctx.fillStyle = color;
     ctx.strokeStyle = 'rgba(0,0,0,0.4)';
     ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(t.x, t.y, 9, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    if (t.ty === 'ru') {
+      ctx.beginPath(); ctx.arc(t.x, t.y, 12, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); // 大圆炮塔
+    } else {
+      ctx.beginPath(); ctx.arc(t.x, t.y, 9, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    }
     ctx.fillStyle = 'rgba(255,255,255,0.5)';
     ctx.beginPath(); ctx.arc(t.x, t.y, 4, 0, Math.PI * 2); ctx.fill();
     // 护盾
@@ -996,13 +1028,21 @@
     } else {
       els.repairBar.classList.add('hidden');
     }
-    // 弹药显示
+    // 弹药显示（单发装填）
     if (localReload > 0) {
       els.ammoBox.textContent = '装填中 ' + Math.ceil(localReload) + 's';
       els.ammoBox.classList.add('reloading');
     } else {
-      els.ammoBox.textContent = '🔫 ' + localMag + '/' + MAG_SIZE;
+      els.ammoBox.textContent = '🔫 已装填';
       els.ammoBox.classList.remove('reloading');
+    }
+    // 反应装甲显示
+    if (selfEra > 0) {
+      els.eraBox.textContent = '🛡️'.repeat(Math.min(4, selfEra)) + '×' + selfEra;
+      els.eraBox.classList.remove('no-era');
+    } else {
+      els.eraBox.textContent = '🛡️ 装甲失效';
+      els.eraBox.classList.add('no-era');
     }
     els.buffs.innerHTML = '';
     if (selfBuffs.shd) addBuff('护盾', 'b-shield', selfBuffs.shd);
@@ -1090,7 +1130,8 @@
       const div = document.createElement('div');
       div.className = 'plrow' + (p.host ? ' host' : '');
       const color = PALETTE[hashId(p.id) % PALETTE.length];
-      div.innerHTML = '<span class="dot" style="background:' + color + '"></span>' +
+      const tIcon = p.type === 'ru' ? '🇷🇺' : '🇺🇸';
+      div.innerHTML = '<span class="dot" style="background:' + color + '"></span>' + tIcon + ' ' +
         esc(p.name) + (p.host ? ' <span class="crown">👑</span>' : '') +
         (p.id === myId ? ' <span style="color:#4fc3f7;font-size:11px">(你)</span>' : '') +
         (p.alive ? '' : ' <span style="color:#7e92b8;font-size:11px">[观战中]</span>');
@@ -1151,6 +1192,14 @@
   els.btnStart.addEventListener('click', () => {
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'start' }));
   });
+  // 选坦克（大厅）
+  function pickTank(type) {
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'pick', type }));
+    els.tpUs.classList.toggle('sel-us', type === 'us');
+    els.tpRu.classList.toggle('sel-ru', type === 'ru');
+  }
+  els.tpUs.addEventListener('click', () => pickTank('us'));
+  els.tpRu.addEventListener('click', () => pickTank('ru'));
   function leaveRoom() {
     intentionalClose = true;
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'leave' }));
@@ -1302,7 +1351,7 @@
     // 输入发送 / 本地预测
     resize();
     sendInput(now);
-    // 弹药本地模拟（开火即时扣减，服务器快照校正）
+    // 弹药本地模拟（单发制：开火后进入装填，服务器快照校正）
     localFireCd -= dt;
     if (localReload > 0) {
       localReload -= dt;
@@ -1310,9 +1359,12 @@
     }
     const inpNow = currentInput();
     if (phase === 'play' && selfAlive && selfParts.turret && inpNow.shoot && localFireCd <= 0 && localMag > 0) {
-      localFireCd = selfBuffs.rap > 0 ? 0.14 : 0.35;
-      localMag--;
-      if (localMag <= 0) localReload = RELOAD_TIME;
+      localFireCd = 0.25;
+      localMag = 0;
+      let reload = TANK_TYPES[selfType].reload;
+      if (!selfParts.loader) reload *= 2; // 俄军装弹机损坏：装填翻倍
+      if (selfBuffs.rap > 0) reload *= 0.5;
+      localReload = reload;
       // 本地子弹预测：立即显示自己发射的子弹（不等服务器往返）
       if (pred) {
         const ta = mouseAngle;
@@ -1376,7 +1428,7 @@
       if (!src || src.x == null || !src.alive) { p.render = null; continue; }
       seen.add(p.id);
       if (p.id === myId && selfPos) {
-        p.render = { x: selfPos.x, y: selfPos.y, a: selfPos.a, ta: mouseAngle, hp: selfHp, shd: selfBuffs.shd, prt: [selfParts.track, selfParts.turret, selfParts.engine, selfParts.ammo, selfParts.optics], fr: selfFire };
+        p.render = { x: selfPos.x, y: selfPos.y, a: selfPos.a, ta: mouseAngle, hp: selfHp, shd: selfBuffs.shd, ty: selfType, prt: [selfParts.track, selfParts.turret, selfParts.engine, selfParts.ammo, selfParts.optics, selfParts.loader], fr: selfFire };
       } else {
         const from = pa || src;
         const to = pb || src;
@@ -1388,8 +1440,9 @@
           ta: angLerp(from.ta, to.ta, f),
           hp: to.hp,
           shd: to.shd,
-          prt: to.prt || [true, true, true, true, true],
+          prt: to.prt || [true, true, true, true, true, true],
           fr: to.fr || 0,
+          ty: to.ty || 'us',
         };
       }
     }
