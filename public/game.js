@@ -29,7 +29,7 @@
   const PALETTE = ['#ff5d5d', '#4fc3f7', '#66bb6a', '#ffee58', '#ff8a65', '#ba68c8', '#4dd0e1', '#f06292', '#aed581', '#90a4ae'];
   const PUP_COLOR = { health: '#4caf50', shield: '#4dd0e1', rapid: '#ffca28', triple: '#ff7043' };
   const PUP_ICON = { health: '回血', shield: '护盾', rapid: '速射', triple: '三连' };
-  const INTERP_MS = 60; // 快照插值延迟（60Hz 快照下更低延迟）
+  const INTERP_MS = 40; // 快照插值延迟（60Hz 快照下 40ms 足够平滑）
 
   // ---------------- DOM ----------------
   const canvas = $('game');
