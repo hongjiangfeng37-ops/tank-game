@@ -50,8 +50,8 @@
 <!-- 小地图 -->
 <canvas id="minimap" width="148" height="111"></canvas>
 
-<!-- 主菜单 -->
-<div id="menu" class="panel">
+<!-- 主菜单（JS 就绪后显示，避免加载期间误点） -->
+<div id="menu" class="panel hidden">
   <h1>🛡️ 坦克动荡</h1>
   <p class="sub">多人联机 · 最后一辆坦克获胜</p>
   <input id="nameInput" maxlength="12" placeholder="输入昵称">
