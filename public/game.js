@@ -26,7 +26,7 @@
     { x: 1030, y: 810, w: 240, h: 150 },
     { x: 700, y: 525, w: 200, h: 150 },
   ];
-  const TANK = { r: 22, maxSpeed: 240, accel: 340, back: 0.62, turn: 3.2, dragF: 0.9, dragL: 3.8, hp: 100, boostMult: 1.3 };
+  const TANK = { r: 22, l: 52, w: 44, maxSpeed: 240, accel: 340, back: 0.62, turn: 3.2, dragF: 0.9, dragL: 3.8, hp: 100, boostMult: 1.3 };
   const MAG_SIZE = 1;       // 弹匣容量：单发装填（与 server.js 一致）
   const TANK_TYPES = {      // 客户端展示用（与 server.js 一致）
     us: { name: '美军 M1A2', reload: 4, era: 2, color: '#6b8e5a' },
@@ -865,28 +865,27 @@
       '<path d="M64,44 L82,45 L78,54 L60,52 Z" fill="#6b5f40"/>' +
       '<path d="M88,28 L97,38 L97,46 L88,56 Z" fill="#a8956a"/>' +
       '<line x1="88" y1="30" x2="97" y2="42" stroke="#3a3524" stroke-width="1"/>' +
+      '<line x1="14" y1="34" x2="88" y2="34" stroke="#3a3524" stroke-width="0.8" opacity="0.6"/>' +
       '<rect x="6" y="30" width="6" height="24" fill="none" stroke="#2a2f3a" stroke-width="1.5"/>' +
       '<line x1="6" y1="38" x2="12" y2="38" stroke="#2a2f3a" stroke-width="1"/>' +
       '<line x1="6" y1="46" x2="12" y2="46" stroke="#2a2f3a" stroke-width="1"/>' +
       '<rect x="95" y="34" width="2" height="4" fill="#d8c77a"/>' +
       '<rect x="95" y="46" width="2" height="4" fill="#c96a5a"/>' +
       '</g></svg>',
-    usTurret: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 90 56">' +
-      '<g>' +
-      '<path d="M6,10 L52,6 L62,16 L62,40 L52,50 L6,46 Z" fill="#8d7d52"/>' +
-      '<path d="M6,10 L52,6 L62,16 L62,40 L52,50 L6,46 Z" fill="none" stroke="#3a3524" stroke-width="1.5"/>' +
-      '<path d="M20,12 L40,10 L38,20 L24,20 Z" fill="#5d5236"/>' +
-      '<path d="M44,30 L60,28 L58,40 L42,40 Z" fill="#6b5f40"/>' +
-      '<rect x="0" y="14" width="8" height="28" fill="#7a6c46"/>' +
+    usTurret: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 52">' +
+      '<path d="M4,8 L38,4 L50,14 L50,38 L38,48 L4,44 Z" fill="#8d7d52" stroke="#3a3524" stroke-width="1.5"/>' +
+      '<path d="M14,10 L30,8 L28,18 L16,18 Z" fill="#5d5236"/>' +
+      '<path d="M32,28 L46,26 L44,36 L30,36 Z" fill="#6b5f40"/>' +
+      '<rect x="0" y="14" width="8" height="26" fill="#7a6c46" stroke="#3a3524" stroke-width="1"/>' +
       '<line x1="2" y1="20" x2="8" y2="20" stroke="#3a3524" stroke-width="1"/>' +
-      '<line x1="2" y1="28" x2="8" y2="28" stroke="#3a3524" stroke-width="1"/>' +
-      '<line x1="2" y1="36" x2="8" y2="36" stroke="#3a3524" stroke-width="1"/>' +
-      '</g>' +
-      '<circle cx="34" cy="16" r="3.5" fill="#2a2f3a"/>' +
-      '<circle cx="52" cy="30" r="3" fill="#2a2f3a"/>' +
-      '<rect x="60" y="25" width="26" height="6" rx="2" fill="#3a3524"/>' +
-      '<rect x="70" y="23.5" width="14" height="9" rx="3" fill="#5d5650"/>' +
-      '<rect x="84" y="26" width="5" height="4" fill="#d8dee9"/></svg>',
+      '<line x1="2" y1="27" x2="8" y2="27" stroke="#3a3524" stroke-width="1"/>' +
+      '<line x1="2" y1="34" x2="8" y2="34" stroke="#3a3524" stroke-width="1"/>' +
+      '<circle cx="38" cy="14" r="4" fill="#2a2f3a" stroke="#14181f" stroke-width="1"/>' +
+      '<circle cx="38" cy="14" r="1.5" fill="#4a5568"/>' +
+      '<circle cx="16" cy="38" r="5" fill="#7a6c46" stroke="#3a3524" stroke-width="1.2"/>' +
+      '<circle cx="44" cy="26" r="3" fill="#2a2f3a"/>' +
+      '<path d="M10,10 L36,7 L44,12" fill="none" stroke="#a8956a" stroke-width="2" opacity="0.7"/>' +
+      '</svg>',
     ruBody: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 78">' +
       '<rect x="4" y="4" width="92" height="13" rx="5" fill="#171d17"/>' +
       '<rect x="4" y="61" width="92" height="13" rx="5" fill="#171d17"/>' +
@@ -908,6 +907,8 @@
       '<path d="M18,42 L38,41 L42,50 L22,52 Z" fill="#33402f"/>' +
       '<path d="M86,31 L96,39 L86,47 Z" fill="#5a6c48"/>' +
       '<line x1="86" y1="33" x2="96" y2="39" stroke="#232e1c" stroke-width="1"/>' +
+      '<line x1="12" y1="34" x2="78" y2="34" stroke="#232e1c" stroke-width="0.8" opacity="0.6"/>' +
+      '<line x1="12" y1="42" x2="82" y2="44" stroke="#232e1c" stroke-width="0.8" opacity="0.5"/>' +
       '<g stroke="#232e1c" stroke-width="0.8">' +
       '<rect x="68" y="26" width="12" height="8" fill="#5a6c48"/>' +
       '<rect x="82" y="28" width="10" height="7" fill="#5a6c48"/>' +
@@ -916,20 +917,20 @@
       '</g>' +
       '<rect x="94" y="36" width="3" height="6" fill="#c9b45c"/>' +
       '</g></svg>',
-    ruTurret: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 90 60">' +
-      '<circle cx="36" cy="30" r="24" fill="#4a5a3a"/>' +
-      '<circle cx="36" cy="30" r="24" fill="none" stroke="#232e1c" stroke-width="1.5"/>' +
-      '<path d="M22,18 A24,24 0 0 1 48,14" fill="none" stroke="#5d7048" stroke-width="3" opacity="0.6"/>' +
+    ruTurret: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">' +
+      '<circle cx="24" cy="24" r="22" fill="#4a5a3a" stroke="#232e1c" stroke-width="1.5"/>' +
+      '<path d="M10,14 A22,22 0 0 1 34,8" fill="none" stroke="#5d7048" stroke-width="3" opacity="0.6"/>' +
       '<g stroke="#232e1c" stroke-width="0.8" fill="#5a6c48">' +
-      '<rect x="44" y="14" width="10" height="7"/><rect x="56" y="18" width="8" height="6"/>' +
-      '<rect x="44" y="24" width="10" height="7"/><rect x="44" y="34" width="10" height="7"/>' +
-      '<rect x="56" y="38" width="8" height="6"/><rect x="44" y="44" width="10" height="7"/>' +
+      '<rect x="28" y="6" width="9" height="6"/><rect x="38" y="10" width="8" height="5"/>' +
+      '<rect x="28" y="15" width="9" height="6"/><rect x="38" y="18" width="8" height="5"/>' +
+      '<rect x="28" y="24" width="9" height="6"/><rect x="38" y="26" width="8" height="5"/>' +
+      '<rect x="28" y="33" width="9" height="6"/><rect x="38" y="34" width="8" height="5"/>' +
       '</g>' +
-      '<circle cx="32" cy="24" r="4.5" fill="#2a3526"/>' +
-      '<circle cx="28" cy="34" r="3.5" fill="#2a3526"/>' +
-      '<rect x="58" y="27" width="28" height="6" rx="2" fill="#2a3526"/>' +
-      '<rect x="68" y="25.5" width="15" height="9" rx="3" fill="#55684c"/>' +
-      '<rect x="84" y="28" width="5" height="4" fill="#d8dee9"/></svg>',
+      '<circle cx="18" cy="18" r="5" fill="#2a3526" stroke="#171d17" stroke-width="1"/>' +
+      '<circle cx="14" cy="28" r="4" fill="#2a3526"/>' +
+      '<circle cx="28" cy="36" r="4.5" fill="#42503a" stroke="#232e1c" stroke-width="1"/>' +
+      '<circle cx="24" cy="24" r="22" fill="none" stroke="#5d7048" stroke-width="2" opacity="0.4"/>' +
+      '</svg>',
   };
   const TANK_IMAGES = {};
   (function loadTankImages() {
@@ -953,7 +954,8 @@
     ctx.rotate(t.a);
     const bodyImg = t.ty === 'ru' ? TANK_IMAGES.ruBody : TANK_IMAGES.usBody;
     if (bodyImg) {
-      ctx.drawImage(bodyImg, -50, -42, 100, 84);
+      // 贴图尺寸与碰撞矩形一致：车体 52x44
+      ctx.drawImage(bodyImg, -26, -22, 52, 44);
     } else {
       ctx.fillStyle = color;
       rr(-25, -13, 50, 26, 6); ctx.fill();
@@ -972,19 +974,24 @@
       ctx.beginPath(); ctx.arc(12, 10, 3.5, 0, Math.PI * 2); ctx.fill();
     }
     ctx.restore();
-    // 炮塔贴图（损坏时炮管歪斜）
+    // 炮塔贴图（损坏时炮管歪斜）+ 炮管（长度与子弹出生点一致）
     ctx.save();
     ctx.translate(t.x, t.y);
     ctx.rotate(t.ta + (t.prt && !t.prt[1] ? 0.5 : 0));
     const turImg = t.ty === 'ru' ? TANK_IMAGES.ruTurret : TANK_IMAGES.usTurret;
     if (turImg) {
-      ctx.drawImage(turImg, -40, -30, 90, 60);
+      ctx.drawImage(turImg, -15, -14, 30, 28); // 炮塔本体（不含炮管）
     } else {
       ctx.fillStyle = t.ty === 'ru' ? '#4a5a48' : '#46524a';
       ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#232c38';
-      rr(6, -3, 30, 6, 3); ctx.fill();
     }
+    // 炮管（与服务器子弹出生点 34 一致；M1A2 与 T90M 通用样式）
+    ctx.fillStyle = '#232c38';
+    rr(6, -3.2, 30, 6.4, 3); ctx.fill();
+    ctx.fillStyle = '#3a4656';
+    rr(14, -3.9, 20, 7.8, 3.5); ctx.fill(); // 热护套
+    ctx.fillStyle = '#d8dee9';
+    ctx.fillRect(33, -2, 5, 4);             // 炮口制退器
     ctx.restore();
     // 玩家标识色环（炮塔基座，保留个人颜色识别）
     ctx.fillStyle = color;
@@ -1484,14 +1491,16 @@
       const pb = predBullets[i];
       pb.x += pb.vx * dt;
       pb.y += pb.vy * dt;
-      // 命中敌方坦克：本地子弹立即消失（与服务器一致，避免"击中后继续飞"）
+      // 命中敌方坦克：本地子弹立即消失（旋转矩形判定，与服务器一致）
       let hitTank = false;
       for (const p of players.values()) {
         if (p.id === myId || !p.render) continue;
         const r = p.render;
         const dx = r.x - pb.x, dy = r.y - pb.y;
-        const rr = TANK.r + 7;
-        if (dx * dx + dy * dy < rr * rr) {
+        const fwx = Math.cos(r.a), fwy = Math.sin(r.a);
+        const lx = dx * fwx + dy * fwy;
+        const ly = -dx * fwy + dy * fwx;
+        if (Math.abs(lx) < TANK.l / 2 + 6 && Math.abs(ly) < TANK.w / 2 + 6) {
           hitTank = true;
           spawnParticles(pb.x, pb.y, '#ff8a65', 6, 2.2);
           break;
