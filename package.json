@@ -1,0 +1,12 @@
+{
+  "name": "tank-turmoil",
+  "version": "1.0.0",
+  "private": true,
+  "description": "坦克动荡 - 多人联机坦克对战（零依赖，Node.js 标准库实现）",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
