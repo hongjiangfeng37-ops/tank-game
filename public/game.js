@@ -855,76 +855,150 @@
     ctx.save();
     ctx.translate(t.x, t.y);
     ctx.rotate(t.a);
-    // 履带（损坏时颜色变暗）
-    ctx.fillStyle = t.prt && !t.prt[0] ? '#3d322b' : '#20293a';
-    rr(-24, -17, 48, 11, 4); ctx.fill();
-    rr(-24, 6, 48, 11, 4); ctx.fill();
-    if (t.prt && t.prt[0]) {
-      ctx.strokeStyle = '#2e3b52';
-      ctx.lineWidth = 1.5;
+    // 履带（前后露出，带负重轮；损坏时颜色变暗+断裂）
+    const trackOk = !t.prt || t.prt[0];
+    ctx.fillStyle = trackOk ? '#1b222f' : '#3d322b';
+    rr(-27, -17, 54, 12, 5); ctx.fill();
+    rr(-27, 5, 54, 12, 5); ctx.fill();
+    if (trackOk) {
+      // 负重轮
+      ctx.fillStyle = '#2e3b52';
       for (let i = -2; i <= 2; i++) {
-        ctx.beginPath(); ctx.moveTo(i * 8, -16.5); ctx.lineTo(i * 8, -7.5); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(i * 8, 7.5); ctx.lineTo(i * 8, 16.5); ctx.stroke();
+        ctx.beginPath(); ctx.arc(i * 11, -11, 3.6, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(i * 11, 11, 3.6, 0, Math.PI * 2); ctx.fill();
+      }
+      // 履带齿痕
+      ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+      ctx.lineWidth = 1;
+      for (let i = -2; i <= 2; i++) {
+        ctx.beginPath(); ctx.moveTo(i * 11, -16); ctx.lineTo(i * 11, -14); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(i * 11, 14); ctx.lineTo(i * 11, 16); ctx.stroke();
       }
     } else {
       // 履带断裂效果
       ctx.strokeStyle = '#5a4633';
       ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(-10, -12); ctx.lineTo(6, -12); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(2, 11); ctx.lineTo(18, 11); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-14, -12); ctx.lineTo(2, -12); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(6, 10); ctx.lineTo(22, 10); ctx.stroke();
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.beginPath(); ctx.arc(-4, -11, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(14, 11, 3, 0, Math.PI * 2); ctx.fill();
     }
-    // 车身（按型号：M1A2 方车体+尾部储物架 / T90M 圆润车体+爆反）
-    ctx.fillStyle = color;
+    // 车身与炮塔（按型号精细绘制：M1A2 楔形炮塔+尾舱+侧裙板 / T90M 圆形铸造炮塔+爆反阵列）
     if (t.ty === 'ru') {
-      rr(-19, -12, 38, 24, 8); ctx.fill();                          // 低矮圆润车体
-      ctx.fillStyle = 'rgba(0,0,0,0.22)';
-      rr(-19, -12, 38, 24, 8); ctx.fill();
-      ctx.strokeStyle = 'rgba(0,0,0,0.45)';
-      ctx.lineWidth = 1.5;
-      rr(-19, -12, 38, 24, 8); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(19, -6); ctx.lineTo(25, 0); ctx.lineTo(19, 6); ctx.closePath(); ctx.fill(); // 车头
-      ctx.fillStyle = 'rgba(255,255,255,0.3)';                       // 爆反方块
-      for (let i = 0; i < 3; i++) ctx.fillRect(-15 + i * 9, -8, 6, 5);
-      for (let i = 0; i < 3; i++) ctx.fillRect(-15 + i * 9, 3, 6, 5);
-    } else {
-      rr(-19, -13, 38, 26, 4); ctx.fill();                           // 方形车体
-      ctx.fillStyle = 'rgba(0,0,0,0.22)';
-      rr(-19, -13, 38, 26, 4); ctx.fill();
-      ctx.strokeStyle = 'rgba(0,0,0,0.45)';
-      ctx.lineWidth = 1.5;
-      rr(-19, -13, 38, 26, 4); ctx.stroke();
-      ctx.fillStyle = 'rgba(255,255,255,0.35)';                       // 车头
+      // ---- T90M：低矮车体，前部 V 形装甲，侧裙板 ----
+      ctx.fillStyle = color;
       ctx.beginPath();
-      ctx.moveTo(19, -7); ctx.lineTo(25, 0); ctx.lineTo(19, 7);
+      ctx.moveTo(-26, -10); ctx.lineTo(10, -10); ctx.lineTo(20, -4); ctx.lineTo(24, 0); ctx.lineTo(20, 4); ctx.lineTo(10, 10); ctx.lineTo(-26, 10);
       ctx.closePath(); ctx.fill();
-      ctx.fillStyle = 'rgba(0,0,0,0.35)';                             // 尾部储物架
-      ctx.fillRect(-27, -10, 7, 20);
-      ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+      ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      // 侧裙板（带爆反块）
+      ctx.fillStyle = 'rgba(0,0,0,0.28)';
+      ctx.fillRect(-25, -14, 44, 3.5);
+      ctx.fillRect(-25, 10.5, 44, 3.5);
+      ctx.fillStyle = 'rgba(90, 110, 80, 0.9)';
+      for (let i = 0; i < 4; i++) { ctx.fillRect(-22 + i * 11, -13.5, 6, 2.5); ctx.fillRect(-22 + i * 11, 11, 6, 2.5); }
+      // 车体前部爆反方块（Kontakt-5 风格）
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
+      for (let i = 0; i < 3; i++) { ctx.fillRect(-21 + i * 10, -7.5, 7, 5); ctx.fillRect(-21 + i * 10, 2.5, 7, 5); }
+      // 首上 V 形装甲线
+      ctx.strokeStyle = 'rgba(255,255,255,0.25)';
       ctx.lineWidth = 1;
-      ctx.strokeRect(-27, -10, 7, 20);
-      ctx.beginPath(); ctx.moveTo(-27, -2); ctx.lineTo(-20, -2); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(-27, 2); ctx.lineTo(-20, 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(24, -3); ctx.lineTo(14, 0); ctx.lineTo(24, 3); ctx.stroke();
+    } else {
+      // ---- M1A2：方形车体，首上楔形装甲，侧裙板 ----
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(-26, -11); ctx.lineTo(14, -11); ctx.lineTo(22, -5); ctx.lineTo(24, 0); ctx.lineTo(22, 5); ctx.lineTo(14, 11); ctx.lineTo(-26, 11);
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      // 侧裙板
+      ctx.fillStyle = 'rgba(0,0,0,0.28)';
+      ctx.fillRect(-25, -14.5, 44, 3.5);
+      ctx.fillRect(-25, 11, 44, 3.5);
+      // 首上楔形装甲线
+      ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(24, -4); ctx.lineTo(12, 0); ctx.lineTo(24, 4); ctx.stroke();
+      // 尾部储物篮（网格）
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
+      ctx.fillRect(-30, -8, 4, 16);
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(-30, -8, 4, 16);
+      ctx.beginPath(); ctx.moveTo(-30, -2); ctx.lineTo(-26, -2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-30, 2); ctx.lineTo(-26, 2); ctx.stroke();
     }
     ctx.restore();
-    // 炮塔（损坏时炮管歪斜；T90M 为圆形炮塔）
+    // 炮塔（损坏时炮管歪斜）
     ctx.save();
     ctx.translate(t.x, t.y);
     ctx.rotate(t.ta + (t.prt && !t.prt[1] ? 0.5 : 0));
-    ctx.fillStyle = t.ty === 'ru' ? '#3a4a3a' : '#39445c';
-    rr(8, -3.5, 26, 7, 3); ctx.fill();
-    ctx.fillStyle = '#d8dee9';
-    ctx.fillRect(30, -2, 5, 4);
+    if (t.ty === 'ru') {
+      // T90M 圆形铸造炮塔 + 炮管热护套
+      ctx.fillStyle = '#4a5a48';
+      ctx.beginPath(); ctx.arc(0, 0, 12, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      // 炮塔前部爆反块
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.fillRect(2, -9, 4, 18);
+      ctx.fillRect(-10, -5, 3, 10);
+      // 观瞄舱
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
+      ctx.beginPath(); ctx.arc(-2, 0, 4.5, 0, Math.PI * 2); ctx.fill();
+      // 125mm 炮管（带热护套）
+      ctx.fillStyle = '#232c38';
+      rr(6, -3.2, 30, 6.4, 3); ctx.fill();
+      ctx.fillStyle = '#3a4656';
+      rr(18, -4, 16, 8, 3.5); ctx.fill(); // 热护套
+      ctx.fillStyle = '#d8dee9';
+      ctx.fillRect(34, -2, 5, 4);
+    } else {
+      // M1A2 楔形炮塔（前窄后宽）+ 尾舱
+      ctx.fillStyle = '#46524a';
+      ctx.beginPath();
+      ctx.moveTo(10, -9);
+      ctx.lineTo(14, -3);
+      ctx.lineTo(-6, -8);
+      ctx.lineTo(-13, -5);
+      ctx.lineTo(-13, 5);
+      ctx.lineTo(-6, 8);
+      ctx.lineTo(14, 3);
+      ctx.lineTo(10, 9);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      // 炮塔尾舱（储物篮）
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.fillRect(-20, -5, 6, 10);
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(-20, -5, 6, 10);
+      // 炮长镜
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
+      ctx.beginPath(); ctx.arc(6, 0, 2.5, 0, Math.PI * 2); ctx.fill();
+      // 120mm 炮管（带热护套）
+      ctx.fillStyle = '#232c38';
+      rr(6, -3, 30, 6, 3); ctx.fill();
+      ctx.fillStyle = '#3a4656';
+      rr(16, -3.8, 18, 7.6, 3.5); ctx.fill(); // 热护套
+      ctx.fillStyle = '#d8dee9';
+      ctx.fillRect(34, -2, 5, 4);
+    }
     ctx.restore();
+    // 玩家标识色环（炮塔基座，保留个人颜色识别）
     ctx.fillStyle = color;
     ctx.strokeStyle = 'rgba(0,0,0,0.4)';
     ctx.lineWidth = 1.5;
-    if (t.ty === 'ru') {
-      ctx.beginPath(); ctx.arc(t.x, t.y, 12, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); // 大圆炮塔
-    } else {
-      ctx.beginPath(); ctx.arc(t.x, t.y, 9, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    }
-    ctx.fillStyle = 'rgba(255,255,255,0.5)';
-    ctx.beginPath(); ctx.arc(t.x, t.y, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(t.x, t.y, t.ty === 'ru' ? 6 : 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     // 护盾
     if (t.shd) {
       const pulse = 0.65 + Math.sin(now / 160) * 0.2;
