@@ -70,6 +70,25 @@ button.mini:hover { border-color: #4fc3f7; }
   border-radius: 10px; background: rgba(10, 15, 28, 0.8); border: 1px solid #2a3a5c; color: #ffd54f;
 }
 #ammoBox.reloading { color: #ff8a65; border-color: #ff8a65; }
+#partsBox { margin-top: 6px; display: flex; gap: 5px; }
+#partsBox .part {
+  padding: 2px 8px; border-radius: 8px; font-size: 13px;
+  background: rgba(10, 15, 28, 0.8); border: 1px solid #2a3a5c;
+  filter: grayscale(1); opacity: 0.45;
+}
+#partsBox .part.ok { filter: none; opacity: 1; border-color: #4caf50; }
+#repairBar {
+  margin-top: 5px; height: 6px; border-radius: 3px; overflow: hidden;
+  background: rgba(10, 15, 28, 0.8); border: 1px solid #2a3a5c;
+}
+#repairBar i { display: block; height: 100%; width: 0%; background: #4fc3f7; transition: width .1s; }
+#damageNote {
+  position: fixed; left: 50%; top: 26%; transform: translateX(-50%); z-index: 13;
+  font-size: 17px; font-weight: bold; color: #ff8a65; text-align: center;
+  background: rgba(10, 15, 28, 0.75); border: 1px solid rgba(255, 138, 128, 0.5);
+  padding: 6px 18px; border-radius: 14px; animation: ban .3s ease;
+}
+#damageNote.good { color: #aeea8a; border-color: rgba(174, 234, 138, 0.5); }
 #buffs { display: flex; gap: 6px; margin-top: 6px; min-height: 24px; }
 .buff {
   display: flex; align-items: center; gap: 4px; padding: 2px 8px; font-size: 12px;
