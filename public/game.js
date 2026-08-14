@@ -45,6 +45,7 @@
     countdown: $('countdown'), banner: $('banner'), killfeed: $('killfeed'),
     hud: $('hud'), hpBar: $('hpBar'), hpText: $('hpText'), ammoBox: $('ammoBox'), buffs: $('buffs'),
     partTrack: $('part-track'), partTurret: $('part-turret'), partEngine: $('part-engine'),
+    partAmmo: $('part-ammo'), partOptics: $('part-optics'),
     repairBar: $('repairBar'), damageNote: $('damageNote'),
     deathOverlay: $('deathOverlay'), deathText: $('deathText'),
     scoreboard: $('scoreboard'), sbRows: $('sbRows'),
@@ -115,8 +116,9 @@
   let localMag = MAG_SIZE;      // 本地弹药显示（即时反馈）
   let localReload = 0;          // 本地换弹计时
   let localFireCd = 0;          // 本地开火冷却（仅用于弹药显示节奏）
-  let selfParts = { track: true, turret: true, engine: true }; // 本地部件状态（履带/炮塔/发动机）
+  let selfParts = { track: true, turret: true, engine: true, ammo: true, optics: true }; // 本地部件状态
   let selfRepair = 0;           // 维修进度(秒)
+  let selfFire = 0;             // 起火剩余秒数
 
   const keys = {};
   const mouse = { x: 0, y: 0, down: false, active: false };
@@ -343,7 +345,10 @@
       selfParts.track = me.prt[0];
       selfParts.turret = me.prt[1];
       selfParts.engine = me.prt[2];
+      selfParts.ammo = me.prt[3];
+      selfParts.optics = me.prt[4];
       selfRepair = me.rp || 0;
+      selfFire = me.fr || 0;
     }
     if (!me.alive) { pred = null; return; }
     if (!pred) {
@@ -401,6 +406,10 @@
           sfx.win();
           showBanner(e.name ? '🏆 ' + e.name + ' 获胜！' : '平局！');
           break;
+        case 'fire':
+          sfx.boom();
+          if (e.id === myId) showDamageNote('🔥 起火了！持续掉血', false);
+          break;
         case 'kill':
           sfx.kill();
           addKillfeed(e.killer, e.victim, e.reason);
@@ -408,7 +417,7 @@
         case 'repair':
           sfx.pick();
           if (e.id === myId) {
-            const pname = { track: '履带', turret: '炮塔', engine: '发动机' }[e.part] || e.part;
+            const pname = { track: '履带', turret: '炮塔', engine: '发动机', ammo: '弹药架', optics: '观瞄' }[e.part] || e.part;
             showDamageNote('✅ ' + pname + ' 已修复', true);
           }
           break;
@@ -432,7 +441,7 @@
   }
   function zoneNote(zone, parts) {
     const zname = { front: '正面命中', side: '侧面命中', back: '背面命中' }[zone] || '命中';
-    const pnames = (parts || []).map((p) => ({ track: '履带', turret: '炮塔', engine: '发动机' }[p] || p)).join('、');
+    const pnames = (parts || []).map((p) => ({ track: '履带', turret: '炮塔', engine: '发动机', ammo: '弹药架', optics: '观瞄' }[p] || p)).join('、');
     showDamageNote(pnames ? zname + '！' + pnames + ' 损坏' : zname + '！', false);
   }
   function addKillfeed(killer, victim, reason) {
@@ -848,18 +857,28 @@
         life: 0.8, maxLife: 0.8, size: 4 + Math.random() * 4, color: '#555566',
       });
     }
-    // 血条 & 名字
+    // 起火：车体火焰
+    if (t.fr > 0 && Math.random() < 0.6) {
+      particles.push({
+        x: t.x + (Math.random() - 0.5) * 30, y: t.y + (Math.random() - 0.5) * 30,
+        vx: (Math.random() - 0.5) * 40, vy: -60 - Math.random() * 40,
+        life: 0.5, maxLife: 0.5, size: 6 + Math.random() * 6, color: Math.random() < 0.5 ? '#ff7043' : '#ffd54f',
+      });
+    }
+    // 血条 & 名字（观瞄损坏时无法识别敌方坦克名字）
     const bw = 46;
     const hpFrac = clamp(t.hp / 100, 0, 1);
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
     rr(t.x - bw / 2 - 1, t.y - 40, bw + 2, 7, 3); ctx.fill();
     ctx.fillStyle = hpFrac > 0.5 ? '#66bb6a' : hpFrac > 0.25 ? '#ffca28' : '#ff5d5d';
     rr(t.x - bw / 2, t.y - 39, bw * hpFrac, 5, 2.5); ctx.fill();
-    ctx.font = '11px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'alphabetic';
-    ctx.fillStyle = p.id === myId ? '#fff' : 'rgba(220,230,250,0.9)';
-    ctx.fillText(p.name, t.x, t.y - 46);
+    if (p.id === myId || selfParts.optics) {
+      ctx.font = '11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillStyle = p.id === myId ? '#fff' : 'rgba(220,230,250,0.9)';
+      ctx.fillText(p.name, t.x, t.y - 46);
+    }
   }
 
   // 触屏摇杆绘制（屏幕坐标）
@@ -936,6 +955,8 @@
     els.partTrack.classList.toggle('ok', selfParts.track);
     els.partTurret.classList.toggle('ok', selfParts.turret);
     els.partEngine.classList.toggle('ok', selfParts.engine);
+    els.partAmmo.classList.toggle('ok', selfParts.ammo);
+    els.partOptics.classList.toggle('ok', selfParts.optics);
     // 维修进度
     if (selfRepair > 0) {
       els.repairBar.classList.remove('hidden');
@@ -1281,7 +1302,7 @@
       if (!src || src.x == null || !src.alive) { p.render = null; continue; }
       seen.add(p.id);
       if (p.id === myId && selfPos) {
-        p.render = { x: selfPos.x, y: selfPos.y, a: selfPos.a, ta: mouseAngle, hp: selfHp, shd: selfBuffs.shd, prt: [selfParts.track, selfParts.turret, selfParts.engine] };
+        p.render = { x: selfPos.x, y: selfPos.y, a: selfPos.a, ta: mouseAngle, hp: selfHp, shd: selfBuffs.shd, prt: [selfParts.track, selfParts.turret, selfParts.engine, selfParts.ammo, selfParts.optics], fr: selfFire };
       } else {
         const from = pa || src;
         const to = pb || src;
@@ -1293,7 +1314,8 @@
           ta: angLerp(from.ta, to.ta, f),
           hp: to.hp,
           shd: to.shd,
-          prt: to.prt || [true, true, true],
+          prt: to.prt || [true, true, true, true, true],
+          fr: to.fr || 0,
         };
       }
     }
@@ -1327,7 +1349,8 @@
     drawWorld(st, now);
     ctx.restore();
     drawJoysticks();
-    if (!touch.mode) drawMinimap(sa); // 触屏模式小地图被 CSS 隐藏，跳过绘制
+    // 小地图：观瞄部件损坏时不可用（战术惩罚）
+    if (selfParts.optics) drawMinimap(sa);
 
     // 粒子更新
     for (let i = particles.length - 1; i >= 0; i--) {
