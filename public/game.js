@@ -95,13 +95,10 @@
       if (anyCoarse && anyFine && anyCoarse.matches && !anyFine.matches) return true; // 只有触摸指针的设备
       return false;                                                    // 台式机/触屏笔记本(主输入为鼠标)
     })(),
-    move: null, // {id, sx, sy, dx, dy}
-    aim: null,
+    aim: null,      // 右半屏瞄准摇杆 {id, sx, sy, dx, dy}
     boost: false,
   };
   const JOY_R = 58;
-  const JOY_DEAD = 12;    // 摇杆死区(px)：小位移不响应，防误触
-  const JOY_STEER = 0.85; // 转向灵敏度系数（略低于油门，避免转向过猛）
 
   let snaps = [];           // 快照缓冲
   let players = new Map();  // id -> 渲染状态
@@ -514,45 +511,77 @@
     if (e.target === canvas) e.preventDefault();
   }, { passive: false });
 
-  // 触屏双摇杆：原生 touch 事件驱动（iOS/Android 最可靠，避免 pointerup 丢失导致摇杆不消失）
+  // 触屏控制：右半屏瞄准摇杆（原生 touch 事件，按住开火）+ 左下十字键移动 + 独立开火键
   canvas.addEventListener('touchstart', (e) => {
     e.preventDefault();
     for (const t of e.changedTouches) {
-      const x = t.clientX, y = t.clientY;
-      if (x < canvas.clientWidth * 0.5) {
-        if (!touch.move) touch.move = { id: t.identifier, sx: x, sy: y, dx: 0, dy: 0, at: Date.now() };
-      } else if (!touch.aim) {
-        touch.aim = { id: t.identifier, sx: x, sy: y, dx: 0, dy: 0, at: Date.now() };
+      const x = t.clientX;
+      // 只有右半屏创建瞄准摇杆；移动用固定十字键
+      if (x >= canvas.clientWidth * 0.5 && !touch.aim) {
+        touch.aim = { id: t.identifier, sx: x, sy: t.clientY, dx: 0, dy: 0, at: Date.now() };
       }
     }
   }, { passive: false });
   canvas.addEventListener('touchmove', (e) => {
     e.preventDefault();
     for (const t of e.changedTouches) {
-      const j = (touch.move && touch.move.id === t.identifier) ? touch.move : (touch.aim && touch.aim.id === t.identifier ? touch.aim : null);
+      const j = touch.aim && touch.aim.id === t.identifier ? touch.aim : null;
       if (!j) continue;
       let dx = t.clientX - j.sx, dy = t.clientY - j.sy;
       const len = Math.hypot(dx, dy);
       if (len > JOY_R) { dx = dx / len * JOY_R; dy = dy / len * JOY_R; }
       j.dx = dx; j.dy = dy;
       j.at = Date.now();
-      if (j === touch.aim && len > 8) mouseAngle = Math.atan2(dy, dx);
+      if (len > 8) mouseAngle = Math.atan2(dy, dx);
     }
   }, { passive: false });
   const endTouch = (e) => {
     for (const t of e.changedTouches) {
-      if (touch.move && touch.move.id === t.identifier) touch.move = null;
       if (touch.aim && touch.aim.id === t.identifier) touch.aim = null;
     }
   };
   canvas.addEventListener('touchend', endTouch);
   canvas.addEventListener('touchcancel', endTouch);
-  // 摇杆超时兜底：任何原因导致抬起事件丢失，2 秒无操作自动清除，杜绝"不消失"
+  // 瞄准摇杆超时兜底：抬起事件丢失时自动清除
   setInterval(() => {
     const t = Date.now();
-    if (touch.move && t - touch.move.at > 2000) touch.move = null;
     if (touch.aim && t - touch.aim.at > 2000) touch.aim = null;
   }, 500);
+
+  // 十字方向键 + 开火键（触屏模式）
+  const dpad = { up: false, down: false, left: false, right: false };
+  let fireHeld = false;
+  if (touch.mode) {
+    const bindDpad = (id, key) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const on = (e) => { e.preventDefault(); dpad[key] = true; };
+      const off = () => { dpad[key] = false; };
+      el.addEventListener('pointerdown', on);
+      el.addEventListener('pointerup', off);
+      el.addEventListener('pointercancel', off);
+      el.addEventListener('pointerleave', off);
+      el.addEventListener('touchstart', on, { passive: false });
+      el.addEventListener('touchend', off);
+      el.addEventListener('touchcancel', off);
+    };
+    bindDpad('dpad-up', 'up');
+    bindDpad('dpad-down', 'down');
+    bindDpad('dpad-left', 'left');
+    bindDpad('dpad-right', 'right');
+    const fireEl = document.getElementById('btnFire');
+    if (fireEl) {
+      const fireOn = (e) => { e.preventDefault(); fireHeld = true; };
+      const fireOff = () => { fireHeld = false; };
+      fireEl.addEventListener('pointerdown', fireOn);
+      fireEl.addEventListener('pointerup', fireOff);
+      fireEl.addEventListener('pointercancel', fireOff);
+      fireEl.addEventListener('pointerleave', fireOff);
+      fireEl.addEventListener('touchstart', fireOn, { passive: false });
+      fireEl.addEventListener('touchend', fireOff);
+      fireEl.addEventListener('touchcancel', fireOff);
+    }
+  }
 
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && ws && ws.readyState === 1) {
@@ -571,23 +600,16 @@
     let shoot = mouse.down || keys.Space;
     let boost = !!(keys.ShiftLeft || keys.ShiftRight);
     if (touch.mode) {
-      if (touch.move) {
-        // 摇杆轴：死区(12px) + 平方曲线，小推微动、大推全速，低速更精细
-        const len = Math.hypot(touch.move.dx, touch.move.dy);
-        if (len > JOY_DEAD) {
-          const t = Math.min(1, (len - JOY_DEAD) / (JOY_R - JOY_DEAD));
-          const mag = t * t;
-          const nx = touch.move.dx / len, ny = touch.move.dy / len;
-          thr = clamp(thr + (-ny * mag), -1, 1);
-          steer = clamp(steer + nx * mag * JOY_STEER, -1, 1);
-        }
-      }
+      // 十字方向键移动（固定 UI，量化 ±1）
+      thr = clamp(thr + ((dpad.up ? 1 : 0) - (dpad.down ? 1 : 0)), -1, 1);
+      steer = clamp(steer + ((dpad.right ? 1 : 0) - (dpad.left ? 1 : 0)), -1, 1);
       if (touch.aim) {
         const len = Math.hypot(touch.aim.dx, touch.aim.dy);
         if (len > 8) ta = Math.atan2(touch.aim.dy, touch.aim.dx);
         shoot = true; // 按住右摇杆即开火
       }
       if (touch.boost) boost = true;
+      if (fireHeld) shoot = true; // 独立开火键
     }
     return { thr, steer, ta, shoot, boost };
   }
@@ -915,16 +937,13 @@
         ctx.fillText(label, j.sx, j.sy - JOY_R - 10);
       }
     };
-    draw(touch.move, '移动');
     draw(touch.aim, '瞄准开火');
-    if (!touch.move && !touch.aim) {
+    if (!touch.aim) {
       ctx.fillStyle = 'rgba(255,255,255,0.14)';
-      ctx.beginPath(); ctx.arc(95, vh - 105, 40, 0, Math.PI * 2); ctx.fill();
       ctx.beginPath(); ctx.arc(vw - 95, vh - 105, 40, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = 'rgba(255,255,255,0.55)';
       ctx.font = '13px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('🕹 移动', 95, vh - 100);
       ctx.fillText('🎯 瞄准开火', vw - 95, vh - 100);
     }
   }
