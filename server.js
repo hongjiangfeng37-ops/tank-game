@@ -59,8 +59,11 @@ const TANK = { r: 22, maxSpeed: 240, accel: 340, back: 0.62, turn: 3.2, dragF: 0
 const BULLET = { speed: 620, r: 5, dmg: 30, bounces: 3, life: 3.5, cooldown: 0.35, rapidCd: 0.14 };
 const MAG_SIZE = 6;        // 弹匣容量
 const RELOAD_TIME = 1.4;   // 换弹时间(秒)
-const PARTS_LIST = ['track', 'turret', 'engine']; // 可损坏部件（弹药架殉爆为死亡事件）
+const PARTS_LIST = ['track', 'turret', 'engine', 'ammo', 'optics']; // 可损坏部件
+const FRONT_PARTS = ['track', 'turret', 'engine', 'optics'];         // 正面命中不会直接坏弹药架
 const REPAIR_TIME = 2.5;   // 停车维修一个部件所需秒数
+const FIRE_TIME = 3;       // 起火持续秒数
+const FIRE_DPS = 5;        // 起火每秒伤害
 const POWERUP = { max: 4, spawnEvery: 6, life: 20, r: 15 };
 const ROOM_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -240,8 +243,8 @@ function addPlayer(room, conn, name) {
     tank: null, alive: false, deadAt: 0,
     kills: 0, wins: 0,
     shield: false, rapid: 0, triple: 0, fireCd: 0,
-    parts: { track: true, turret: true, engine: true },
-    repairT: 0,
+    parts: { track: true, turret: true, engine: true, ammo: true, optics: true },
+    repairT: 0, fireT: 0, fireDmg: 0,
     input: { thr: 0, steer: 0, ta: null, shoot: false, boost: false },
   };
   room.players.set(id, p);
@@ -287,8 +290,10 @@ function spawnPlayer(room, p, seat) {
   p.triple = 0;
   p.mag = MAG_SIZE;
   p.reloadT = 0;
-  p.parts = { track: true, turret: true, engine: true }; // 模块化损伤状态
+  p.parts = { track: true, turret: true, engine: true, ammo: true, optics: true };
   p.repairT = 0;
+  p.fireT = 0;
+  p.fireDmg = 0;
 }
 
 function startRound(room) {
@@ -358,6 +363,25 @@ function sim(room, dt, now) {
       p.reloadT -= dt;
       if (p.reloadT <= 0) p.mag = MAG_SIZE;
     }
+    // 着火：持续掉血
+    if (p.fireT > 0) {
+      p.fireT -= dt;
+      p.fireDmg += dt * FIRE_DPS;
+      while (p.fireDmg >= 1) {
+        p.fireDmg -= 1;
+        tk.hp -= 1;
+        if (tk.hp <= 0 && p.alive) {
+          p.alive = false;
+          p.deadAt = now;
+          const killer = room.players.get(p.lastHitBy);
+          if (killer && killer.id !== p.id) {
+            killer.kills++;
+            room.pendingEvents.push({ k: 'kill', killer: killer.name, victim: p.name, reason: '烧毁', x: Math.round(tk.x), y: Math.round(tk.y) });
+          }
+          room.pendingEvents.push({ k: 'boom', x: Math.round(tk.x), y: Math.round(tk.y) });
+        }
+      }
+    }
     // 模块化损伤：部件效果
     const canMove = p.parts.track;
     const canFire = p.parts.turret;
@@ -399,8 +423,20 @@ function sim(room, dt, now) {
 
     collideTankWorld(tk, room.obstacles);
 
-    // 开火（弹匣制：打空自动换弹；炮塔损坏无法开火）
+    // 开火（弹匣制：打空自动换弹；炮塔损坏无法开火；弹药架损坏开火有殉爆风险）
     if (inp.shoot && p.fireCd <= 0 && p.mag > 0 && canFire) {
+      // 弹药架受损：25% 概率开火殉爆
+      if (!p.parts.ammo && Math.random() < 0.25) {
+        p.alive = false;
+        p.deadAt = now;
+        const killer = room.players.get(p.lastHitBy);
+        if (killer && killer.id !== p.id) {
+          killer.kills++;
+          room.pendingEvents.push({ k: 'kill', killer: killer.name, victim: p.name, reason: '殉爆', x: Math.round(tk.x), y: Math.round(tk.y) });
+        }
+        room.pendingEvents.push({ k: 'boom', x: Math.round(tk.x), y: Math.round(tk.y) });
+        continue; // 下一辆坦克
+      }
       p.fireCd = rapid ? BULLET.rapidCd : BULLET.cooldown;
       p.mag--;
       if (p.mag <= 0) p.reloadT = RELOAD_TIME;
@@ -550,13 +586,21 @@ function sim(room, dt, now) {
               room.pendingEvents.push({ k: 'boom', x: Math.round(t2.x), y: Math.round(t2.y) });
             } else {
               t2.hp -= dmg;
+              q.lastHitBy = b.ownerId;
+              const pool = zone === 'front' ? FRONT_PARTS : PARTS_LIST;
               const brokenParts = [];
               for (let k = 0; k < partsBroken; k++) {
-                const avail = PARTS_LIST.filter((n) => q.parts[n]);
+                const avail = pool.filter((n) => q.parts[n]);
                 if (!avail.length) break;
                 const pick = avail[rnd(avail.length)];
                 q.parts[pick] = false;
                 brokenParts.push(pick);
+              }
+              // 起火：12% 概率，持续 3 秒每秒 5 伤害
+              if (Math.random() < 0.12) {
+                q.fireT = FIRE_TIME;
+                q.fireDmg = 0;
+                room.pendingEvents.push({ k: 'fire', id: q.id, x: Math.round(t2.x), y: Math.round(t2.y) });
               }
               room.pendingEvents.push({ k: 'hit', id: q.id, zone, parts: brokenParts, x: Math.round(b.x), y: Math.round(b.y) });
               if (t2.hp <= 0) {
@@ -782,8 +826,9 @@ function broadcast(room) {
       trp: p.triple > 0 ? Math.ceil(p.triple) : 0,
       mag: p.mag,
       rl: Math.round(p.reloadT * 10) / 10,
-      prt: [p.parts.track, p.parts.turret, p.parts.engine], // 履带/炮塔/发动机 状态
+      prt: [p.parts.track, p.parts.turret, p.parts.engine, p.parts.ammo, p.parts.optics], // 履带/炮塔/发动机/弹药架/观瞄
       rp: Math.round(p.repairT * 10) / 10,
+      fr: p.fireT > 0 ? Math.ceil(p.fireT) : 0,
       kills: p.kills, wins: p.wins,
     };
   });
