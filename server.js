@@ -17,6 +17,7 @@ const crypto = require('crypto');
 const { spawn, execFile } = require('child_process');
 const { downloadCloudflared } = require('./lib-download');
 const { segRectHit } = require('./lib-geom');
+const { generateMaze, fitSpawn } = require('./lib-maze');
 
 // ---------------- 配置 ----------------
 const WANTED_PORT = parseInt(process.env.PORT || process.argv[2] || '8123', 10);
@@ -33,7 +34,11 @@ const MAX_MSG = 1 << 20;       // 单条消息上限 1MB
 // ---------------- 世界常量（与 public/game.js 保持一致） ----------------
 const WORLD = { w: 1600, h: 1200 };
 const WALL_T = 24; // 墙厚（碰撞边界在墙内缘）
-const OBSTACLES = [
+// 迷宫参数：每回合随机生成新迷宫（DFS 完美迷宫，通道全部连通）
+const MAZE_COLS = 10, MAZE_ROWS = 8;
+const MAZE_WALL = 20; // 迷宫隔墙厚度
+// 固定地图（测试模式 TK_FIXED_MAP=1 使用，生产环境每回合随机迷宫）
+const DEFAULT_OBSTACLES = [
   { x: 330, y: 240, w: 240, h: 150 },
   { x: 1030, y: 240, w: 240, h: 150 },
   { x: 330, y: 810, w: 240, h: 150 },
@@ -54,8 +59,15 @@ const TANK = { r: 22, maxSpeed: 240, accel: 340, back: 0.62, turn: 3.2, dragF: 0
 const BULLET = { speed: 620, r: 5, dmg: 30, bounces: 3, life: 3.5, cooldown: 0.35, rapidCd: 0.14 };
 const MAG_SIZE = 6;        // 弹匣容量
 const RELOAD_TIME = 1.4;   // 换弹时间(秒)
+const PARTS_LIST = ['track', 'turret', 'engine']; // 可损坏部件（弹药架殉爆为死亡事件）
+const REPAIR_TIME = 2.5;   // 停车维修一个部件所需秒数
 const POWERUP = { max: 4, spawnEvery: 6, life: 20, r: 15 };
 const ROOM_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+// 生成当前回合的地图（测试模式用固定布局，生产每回合随机迷宫）
+function roomMap() {
+  return process.env.TK_FIXED_MAP === '1' ? DEFAULT_OBSTACLES.map((o) => ({ ...o })) : generateMaze(MAZE_COLS, MAZE_ROWS, WORLD.w, WORLD.h, MAZE_WALL);
+}
 
 // ---------------- 工具函数 ----------------
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -67,8 +79,8 @@ function weightedPick(weights) {
   for (let i = 0; i < weights.length; i++) { r -= weights[i]; if (r <= 0) return i; }
   return weights.length - 1;
 }
-function insideObstacle(x, y, pad) {
-  for (const o of OBSTACLES) {
+function insideObstacle(x, y, pad, obstacles) {
+  for (const o of obstacles) {
     if (x >= o.x - pad && x <= o.x + o.w + pad && y >= o.y - pad && y <= o.y + o.h + pad) return true;
   }
   return false;
@@ -208,6 +220,8 @@ function makeRoom(conn, name) {
     phaseT: 0,
     winner: null,
     roundNo: 0,
+    obstacles: roomMap(), // 本回合地图（生产每回合随机迷宫）
+    spawns: SPAWNS.map((s) => ({ ...s })),
     bullets: [],
     pups: [],
     pupTimer: 4,
@@ -226,6 +240,8 @@ function addPlayer(room, conn, name) {
     tank: null, alive: false, deadAt: 0,
     kills: 0, wins: 0,
     shield: false, rapid: 0, triple: 0, fireCd: 0,
+    parts: { track: true, turret: true, engine: true },
+    repairT: 0,
     input: { thr: 0, steer: 0, ta: null, shoot: false, boost: false },
   };
   room.players.set(id, p);
@@ -237,6 +253,7 @@ function addPlayer(room, conn, name) {
     phase: room.phase, phaseT: Math.round(room.phaseT * 10) / 10, winner: room.winner,
     lan: lanHint(),
     publicUrl: tunnel.state === 'on' ? tunnel.url : null,
+    map: room.obstacles,
     players: roster(room),
     scores: scores(room),
   });
@@ -270,10 +287,22 @@ function spawnPlayer(room, p, seat) {
   p.triple = 0;
   p.mag = MAG_SIZE;
   p.reloadT = 0;
+  p.parts = { track: true, turret: true, engine: true }; // 模块化损伤状态
+  p.repairT = 0;
 }
 
 function startRound(room) {
   room.roundNo++;
+  // 每回合生成全新迷宫，并重新计算出生点（移到最近通道）
+  room.obstacles = roomMap();
+  const usedCells = new Set();
+  room.spawns = SPAWNS.map((s) => {
+    const f = fitSpawn(room.obstacles, s.x, s.y, TANK.r, WORLD.w, WORLD.h, WALL_T, usedCells);
+    return { x: f.x, y: f.y, a: s.a };
+  });
+  // 广播新地图
+  const mapMsg = { t: 'map', obstacles: room.obstacles };
+  for (const p of room.players.values()) send(p.conn, mapMsg);
   room.bullets = [];
   room.pups = [];
   room.pupTimer = 3;
@@ -282,21 +311,21 @@ function startRound(room) {
   room.phase = solo ? 'play' : 'countdown';
   room.phaseT = solo ? 0 : 3;
   let i = 0;
-  for (const p of room.players.values()) { spawnPlayer(room, p, SPAWNS[i % SPAWNS.length]); i++; }
+  for (const p of room.players.values()) { spawnPlayer(room, p, room.spawns[i % room.spawns.length]); i++; }
   room.pendingEvents.push({ k: 'round', n: room.roundNo });
   if (!solo) room.pendingEvents.push({ k: 'tick', n: 3 });
   broadcastRoom(room);
 }
 
 // ---------------- 物理与战斗 ----------------
-function collideTankWorld(tk) {
+function collideTankWorld(tk, obstacles) {
   const minX = WALL_T + TANK.r, maxX = WORLD.w - WALL_T - TANK.r;
   const minY = WALL_T + TANK.r, maxY = WORLD.h - WALL_T - TANK.r;
   if (tk.x < minX) { tk.x = minX; if (tk.vx < 0) tk.vx = -tk.vx * 0.3; }
   else if (tk.x > maxX) { tk.x = maxX; if (tk.vx > 0) tk.vx = -tk.vx * 0.3; }
   if (tk.y < minY) { tk.y = minY; if (tk.vy < 0) tk.vy = -tk.vy * 0.3; }
   else if (tk.y > maxY) { tk.y = maxY; if (tk.vy > 0) tk.vy = -tk.vy * 0.3; }
-  for (const o of OBSTACLES) {
+  for (const o of obstacles) {
     const cx = clamp(tk.x, o.x, o.x + o.w);
     const cy = clamp(tk.y, o.y, o.y + o.h);
     const dx = tk.x - cx, dy = tk.y - cy;
@@ -329,10 +358,27 @@ function sim(room, dt, now) {
       p.reloadT -= dt;
       if (p.reloadT <= 0) p.mag = MAG_SIZE;
     }
+    // 模块化损伤：部件效果
+    const canMove = p.parts.track;
+    const canFire = p.parts.turret;
+    // 维修：完全静止（无油门/转向/开火）且部件损坏时累积进度，2.5 秒修好一个
+    const brokenCount = PARTS_LIST.filter((n) => !p.parts[n]).length;
+    if (brokenCount > 0 && inp.thr === 0 && inp.steer === 0 && !inp.shoot) {
+      p.repairT += dt;
+      if (p.repairT >= REPAIR_TIME) {
+        p.repairT = 0;
+        const broken = PARTS_LIST.filter((n) => !p.parts[n]);
+        const pick = broken[rnd(broken.length)];
+        p.parts[pick] = true;
+        room.pendingEvents.push({ k: 'repair', id: p.id, part: pick, x: Math.round(tk.x), y: Math.round(tk.y) });
+      }
+    } else {
+      p.repairT = 0;
+    }
 
     const f = { x: Math.cos(tk.a), y: Math.sin(tk.a) };
     const px = -f.y, py = f.x;
-    const thr = inp.thr * (inp.thr < 0 ? TANK.back : 1);
+    const thr = (canMove ? inp.thr : 0) * (inp.thr < 0 ? TANK.back : 1);
     tk.vx += f.x * thr * TANK.accel * dt;
     tk.vy += f.y * thr * TANK.accel * dt;
     let fwd = tk.vx * f.x + tk.vy * f.y;
@@ -342,7 +388,7 @@ function sim(room, dt, now) {
     lat *= Math.exp(-TANK.dragL * dt);
     tk.vx = f.x * fwd + px * lat;
     tk.vy = f.y * fwd + py * lat;
-    const spd = TANK.maxSpeed * (inp.boost ? TANK.boostMult : 1);
+    const spd = TANK.maxSpeed * (p.parts.engine ? 1 : 0.45) * (inp.boost ? TANK.boostMult : 1);
     const sp = Math.hypot(tk.vx, tk.vy);
     if (sp > spd) { tk.vx *= spd / sp; tk.vy *= spd / sp; }
 
@@ -351,10 +397,10 @@ function sim(room, dt, now) {
     tk.a += inp.steer * TANK.turn * dt;
     if (inp.ta != null) tk.ta = inp.ta;
 
-    collideTankWorld(tk);
+    collideTankWorld(tk, room.obstacles);
 
-    // 开火（弹匣制：打空自动换弹）
-    if (inp.shoot && p.fireCd <= 0 && p.mag > 0) {
+    // 开火（弹匣制：打空自动换弹；炮塔损坏无法开火）
+    if (inp.shoot && p.fireCd <= 0 && p.mag > 0 && canFire) {
       p.fireCd = rapid ? BULLET.rapidCd : BULLET.cooldown;
       p.mag--;
       if (p.mag <= 0) p.reloadT = RELOAD_TIME;
@@ -365,7 +411,7 @@ function sim(room, dt, now) {
         let bx = mx, by = my;
         for (let k = 0; k < 30; k++) {
           let inside = false;
-          for (const o of OBSTACLES) {
+          for (const o of room.obstacles) {
             if (bx >= o.x && bx <= o.x + o.w && by >= o.y && by <= o.y + o.h) { inside = true; break; }
           }
           if (!inside) break;
@@ -422,7 +468,7 @@ function sim(room, dt, now) {
 
     // 障碍碰撞：线段检测（防高速隧穿穿墙），仅在真正撞击表面时反弹并消耗次数
     if (!dead) {
-      for (const o of OBSTACLES) {
+      for (const o of room.obstacles) {
         const hit = segRectHit(px, py, b.x, b.y, o);
         if (hit) {
           b.x = hit.x; b.y = hit.y;
@@ -438,7 +484,7 @@ function sim(room, dt, now) {
     }
     // 兜底：子弹中心进入障碍内部（擦角/极端情况）→ 强制按最近表面推出并反弹，杜绝穿墙
     if (!dead) {
-      for (const o of OBSTACLES) {
+      for (const o of room.obstacles) {
         if (b.x > o.x && b.x < o.x + o.w && b.y > o.y && b.y < o.y + o.h) {
           const dl = b.x - o.x, dr = o.x + o.w - b.x;
           const dt = b.y - o.y, db = o.y + o.h - b.y;
@@ -458,7 +504,7 @@ function sim(room, dt, now) {
       }
     }
 
-    // 命中坦克
+    // 命中坦克（模块化损伤：按命中部位判定伤害与部件损坏）
     if (!dead) {
       for (const q of alive) {
         if (q.id === b.ownerId) continue;
@@ -471,17 +517,58 @@ function sim(room, dt, now) {
             q.shield = false;
             room.pendingEvents.push({ k: 'shield', id: q.id, x: Math.round(t2.x), y: Math.round(t2.y) });
           } else {
-            t2.hp -= BULLET.dmg;
-            room.pendingEvents.push({ k: 'hit', id: q.id, x: Math.round(b.x), y: Math.round(b.y) });
-            if (t2.hp <= 0) {
+            // 部位判定：子弹方向 vs 坦克正面
+            const fwdX = Math.cos(t2.a), fwdY = Math.sin(t2.a);
+            const bSpeed = Math.hypot(b.vx, b.vy) || 1;
+            const dot = (b.vx * fwdX + b.vy * fwdY) / bSpeed;
+            const zone = dot > 0.5 ? 'front' : (dot < -0.5 ? 'back' : 'side');
+            const dmg = zone === 'front' ? 20 : (zone === 'back' ? 40 : 30);
+            let partsBroken = 0;
+            let detonate = false;
+            if (zone === 'front') {
+              if (Math.random() < 0.8) partsBroken = 1;          // 正面：大概率坏 1 个部件
+            } else if (zone === 'side') {
+              const r = Math.random();
+              if (r < 0.12) detonate = true;                      // 侧面：概率殉爆
+              else if (r < 0.5) partsBroken = 2;
+              else partsBroken = 1;
+            } else {
+              const r = Math.random();
+              if (r < 0.22) detonate = true;                      // 背面：更高殉爆概率
+              else if (r < 0.72) partsBroken = 2;
+              else partsBroken = 1;
+            }
+            if (detonate) {
+              // 弹药架殉爆：立即击毁
               q.alive = false;
               q.deadAt = now;
               const killer = room.players.get(b.ownerId);
               if (killer && killer.id !== q.id) {
                 killer.kills++;
-                room.pendingEvents.push({ k: 'kill', killer: killer.name, victim: q.name, x: Math.round(t2.x), y: Math.round(t2.y) });
+                room.pendingEvents.push({ k: 'kill', killer: killer.name, victim: q.name, reason: '殉爆', x: Math.round(t2.x), y: Math.round(t2.y) });
               }
               room.pendingEvents.push({ k: 'boom', x: Math.round(t2.x), y: Math.round(t2.y) });
+            } else {
+              t2.hp -= dmg;
+              const brokenParts = [];
+              for (let k = 0; k < partsBroken; k++) {
+                const avail = PARTS_LIST.filter((n) => q.parts[n]);
+                if (!avail.length) break;
+                const pick = avail[rnd(avail.length)];
+                q.parts[pick] = false;
+                brokenParts.push(pick);
+              }
+              room.pendingEvents.push({ k: 'hit', id: q.id, zone, parts: brokenParts, x: Math.round(b.x), y: Math.round(b.y) });
+              if (t2.hp <= 0) {
+                q.alive = false;
+                q.deadAt = now;
+                const killer = room.players.get(b.ownerId);
+                if (killer && killer.id !== q.id) {
+                  killer.kills++;
+                  room.pendingEvents.push({ k: 'kill', killer: killer.name, victim: q.name, reason: '击毁', x: Math.round(t2.x), y: Math.round(t2.y) });
+                }
+                room.pendingEvents.push({ k: 'boom', x: Math.round(t2.x), y: Math.round(t2.y) });
+              }
             }
           }
           break;
@@ -511,7 +598,7 @@ function sim(room, dt, now) {
     for (let tries = 0; tries < 40; tries++) {
       const x = WALL_T + 70 + Math.random() * (WORLD.w - 2 * (WALL_T + 70));
       const y = WALL_T + 70 + Math.random() * (WORLD.h - 2 * (WALL_T + 70));
-      if (insideObstacle(x, y, POWERUP.r + 6)) continue;
+      if (insideObstacle(x, y, POWERUP.r + 6, room.obstacles)) continue;
       room.pups.push({ x, y, type, life: POWERUP.life });
       break;
     }
@@ -526,7 +613,10 @@ function sim(room, dt, now) {
       const rr = TANK.r + POWERUP.r;
       if (dx * dx + dy * dy < rr * rr) {
         taken = true;
-        if (pu.type === 'health') tk.hp = Math.min(TANK.hp, tk.hp + 50);
+        if (pu.type === 'health') {
+          tk.hp = Math.min(TANK.hp, tk.hp + 50);
+          for (const n of PARTS_LIST) p.parts[n] = true; // 血包同时修复所有部件
+        }
         else if (pu.type === 'shield') p.shield = true;
         else if (pu.type === 'rapid') p.rapid = 8;
         else if (pu.type === 'triple') p.triple = 8;
@@ -692,6 +782,8 @@ function broadcast(room) {
       trp: p.triple > 0 ? Math.ceil(p.triple) : 0,
       mag: p.mag,
       rl: Math.round(p.reloadT * 10) / 10,
+      prt: [p.parts.track, p.parts.turret, p.parts.engine], // 履带/炮塔/发动机 状态
+      rp: Math.round(p.repairT * 10) / 10,
       kills: p.kills, wins: p.wins,
     };
   });
