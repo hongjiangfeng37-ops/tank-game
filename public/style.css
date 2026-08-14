@@ -206,7 +206,7 @@ button.mini:hover { border-color: #4fc3f7; }
 
 /* ---------- 触屏 ---------- */
 /* ---------- 触屏（手机）布局：避让摇杆区域 ---------- */
-body.touch #minimap { display: none; }              /* 右下角让给瞄准摇杆 */
+body.touch #minimap { display: block; left: 50%; right: auto; top: 58px; transform: translateX(-50%); width: 100px; height: 75px; opacity: 0.85; }  /* 小地图移到顶部中间，不挡摇杆 */
 body.touch #hud { top: 10px; bottom: auto; left: 50%; transform: translateX(-50%); width: 240px; }  /* HUD 移到顶部，让出左下移动摇杆 */
 body.touch #scoreboard { left: 12px; right: auto; top: 44px; }  /* 记分板移到左侧 */
 body.touch #boostBtn { top: 52px; bottom: auto; right: 14px; width: 58px; height: 58px; }  /* 加速键移出瞄准区 */
