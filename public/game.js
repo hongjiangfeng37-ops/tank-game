@@ -211,14 +211,15 @@
       ws = null;
       stopBrowse();
       if (intentionalClose) { showMenu(); return; }
-      if (browse) { // 静默重连浏览连接
+      if (intent.join === false) { // 纯浏览连接：静默重连
         reconnectTimer = setTimeout(() => { reconnectTimer = null; connect(null, { browse: true }); }, 3000);
         return;
       }
+      // 已发起加入：按加入意图重连（避免断线后丢失 join 请求）
       els.connText.textContent = '连接断开，正在重连…';
       show(els.connOverlay, true);
       show(els.btnConnCancel, true);
-      reconnectTimer = setTimeout(() => { reconnectTimer = null; connect(room, opts); }, 1800);
+      reconnectTimer = setTimeout(() => { reconnectTimer = null; connect(intent.room, { browse: false }); }, 1800);
     };
     ws.onerror = () => { /* onclose 处理 */ };
   }
@@ -1123,7 +1124,13 @@
     localStorage.setItem('tk_name', myName);
     els.errMsg.textContent = '';
     if (ws && ws.readyState === 1) {
-      if (!joined) ws.send(JSON.stringify({ t: 'join', name: myName, room: room || null }));
+      if (!joined) {
+        // 从浏览连接转为加入意图：发送 join，并确保断线后按加入重连
+        intent = { join: true, room: room || null };
+        browse = false;
+        stopBrowse();
+        ws.send(JSON.stringify({ t: 'join', name: myName, room: room || null }));
+      }
     } else if (ws && ws.readyState === 0) {
       intent = { join: true, room: room || null }; // 连接建立后自动加入
     } else {
