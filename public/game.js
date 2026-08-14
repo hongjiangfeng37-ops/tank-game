@@ -32,7 +32,7 @@
   const PALETTE = ['#ff5d5d', '#4fc3f7', '#66bb6a', '#ffee58', '#ff8a65', '#ba68c8', '#4dd0e1', '#f06292', '#aed581', '#90a4ae'];
   const PUP_COLOR = { health: '#4caf50', shield: '#4dd0e1', rapid: '#ffca28', triple: '#ff7043' };
   const PUP_ICON = { health: '回血', shield: '护盾', rapid: '速射', triple: '三连' };
-  const INTERP_MS = 40; // 快照插值延迟（60Hz 快照下 40ms 足够平滑）
+  const INTERP_MS = 30; // 快照插值延迟（60Hz 快照下 30ms 足够平滑，进一步降低感知延迟）
 
   // ---------------- DOM ----------------
   const canvas = $('game');
@@ -116,6 +116,7 @@
   let localMag = MAG_SIZE;      // 本地弹药显示（即时反馈）
   let localReload = 0;          // 本地换弹计时
   let localFireCd = 0;          // 本地开火冷却（仅用于弹药显示节奏）
+  let predBullets = [];         // 本地预测子弹（自己开火即时显示，服务器快照接管前使用）
   let selfParts = { track: true, turret: true, engine: true, ammo: true, optics: true }; // 本地部件状态
   let selfRepair = 0;           // 维修进度(秒)
   let selfFire = 0;             // 起火剩余秒数
@@ -736,8 +737,9 @@
     for (const pu of pups) {
       drawPup(pu, now);
     }
-    // 子弹
+    // 子弹：远程用插值快照，自己的用本地预测（即时反馈，避免等服务器往返）
     for (const b of bullets) {
+      if (b.o === myId) continue; // 自己的子弹由本地预测渲染
       const tx = b.x - b.vx * 0.045, ty = b.y - b.vy * 0.045;
       ctx.strokeStyle = 'rgba(255, 210, 110, 0.55)';
       ctx.lineWidth = 2.5;
@@ -746,6 +748,16 @@
       ctx.beginPath(); ctx.arc(b.x, b.y, 3.2, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = 'rgba(255, 200, 90, 0.35)';
       ctx.beginPath(); ctx.arc(b.x, b.y, 7.5, 0, Math.PI * 2); ctx.fill();
+    }
+    for (const pb of predBullets) {
+      const tx = pb.x - pb.vx * 0.045, ty = pb.y - pb.vy * 0.045;
+      ctx.strokeStyle = 'rgba(255, 235, 170, 0.7)';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(pb.x, pb.y); ctx.stroke();
+      ctx.fillStyle = '#fffbe8';
+      ctx.beginPath(); ctx.arc(pb.x, pb.y, 3.4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(255, 220, 130, 0.45)';
+      ctx.beginPath(); ctx.arc(pb.x, pb.y, 8, 0, Math.PI * 2); ctx.fill();
     }
     // 坦克
     for (const p of players.values()) {
@@ -1275,6 +1287,42 @@
       localFireCd = selfBuffs.rap > 0 ? 0.14 : 0.35;
       localMag--;
       if (localMag <= 0) localReload = RELOAD_TIME;
+      // 本地子弹预测：立即显示自己发射的子弹（不等服务器往返）
+      if (pred) {
+        const ta = mouseAngle;
+        const spd = 620;
+        predBullets.push({
+          x: pred.x + Math.cos(ta) * 34, y: pred.y + Math.sin(ta) * 34,
+          vx: Math.cos(ta) * spd, vy: Math.sin(ta) * spd,
+          t: performance.now(),
+        });
+        if (selfBuffs.trp > 0) {
+          predBullets.push({ x: pred.x + Math.cos(ta - 0.18) * 34, y: pred.y + Math.sin(ta - 0.18) * 34, vx: Math.cos(ta - 0.18) * spd, vy: Math.sin(ta - 0.18) * spd, t: performance.now() });
+          predBullets.push({ x: pred.x + Math.cos(ta + 0.18) * 34, y: pred.y + Math.sin(ta + 0.18) * 34, vx: Math.cos(ta + 0.18) * spd, vy: Math.sin(ta + 0.18) * spd, t: performance.now() });
+        }
+      }
+    }
+    // 推进/清理本地预测子弹（1.2 秒后服务器快照已接管；含简化反弹避免穿墙视觉）
+    for (let i = predBullets.length - 1; i >= 0; i--) {
+      const pb = predBullets[i];
+      pb.x += pb.vx * dt;
+      pb.y += pb.vy * dt;
+      // 世界墙反弹
+      if (pb.x < WALL_T + 5) { pb.x = WALL_T + 5; pb.vx = -pb.vx; }
+      else if (pb.x > WORLD.w - WALL_T - 5) { pb.x = WORLD.w - WALL_T - 5; pb.vx = -pb.vx; }
+      if (pb.y < WALL_T + 5) { pb.y = WALL_T + 5; pb.vy = -pb.vy; }
+      else if (pb.y > WORLD.h - WALL_T - 5) { pb.y = WORLD.h - WALL_T - 5; pb.vy = -pb.vy; }
+      // 障碍反弹（简化 AABB，服务器会校正）
+      for (const o of mapObstacles) {
+        if (pb.x > o.x - 5 && pb.x < o.x + o.w + 5 && pb.y > o.y - 5 && pb.y < o.y + o.h + 5) {
+          if (pb.vx > 0 && pb.x < o.x) { pb.x = o.x - 5; pb.vx = -pb.vx; }
+          else if (pb.vx < 0 && pb.x > o.x + o.w) { pb.x = o.x + o.w + 5; pb.vx = -pb.vx; }
+          else if (pb.vy > 0 && pb.y < o.y) { pb.y = o.y - 5; pb.vy = -pb.vy; }
+          else if (pb.vy < 0 && pb.y > o.y + o.h) { pb.y = o.y + o.h + 5; pb.vy = -pb.vy; }
+          break;
+        }
+      }
+      if (performance.now() - pb.t > 1200) predBullets.splice(i, 1);
     }
     sendPing(now);
     stepPred(dt);
