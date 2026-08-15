@@ -55,8 +55,8 @@ const SPAWNS = [
   { x: 110, y: 600, a: 0 },
   { x: 1490, y: 600, a: Math.PI },
 ];
-// 坦克尺寸（真实比例：长 84 宽 38，椭圆碰撞轴 rx/ry）
-const TANK = { rx: 42, ry: 19, l: 84, w: 38, accel: 340, turn: 3.2, dragF: 0.9, dragL: 3.8, hp: 100, boostMult: 1.3 };
+// 坦克尺寸（52x44 原版比例，SAT 旋转矩形碰撞轴 rx/ry）
+const TANK = { rx: 26, ry: 22, l: 52, w: 44, accel: 340, turn: 3.2, dragF: 0.9, dragL: 3.8, hp: 100, boostMult: 1.3 };
 // 坦克类型（玩家开局选择）
 // 装甲厚度：armor 基础 / armorEra 爆反生效时；穿深：pen 初始，每次反弹扣 penDrop，扣完消失
 const TANK_TYPES = {
@@ -575,8 +575,8 @@ function sim(room, dt, now) {
 
     // 开火（单发制：装填完成后可发射；炮塔损坏无法开火；弹药架损坏开火有殉爆风险；枪口顶墙禁止隔墙射击）
     if (inp.shoot && p.fireCd <= 0 && p.mag > 0 && canFire) {
-      const mx = tk.x + Math.cos(tk.ta) * 48;
-      const my = tk.y + Math.sin(tk.ta) * 48;
+      const mx = tk.x + Math.cos(tk.ta) * 34;
+      const my = tk.y + Math.sin(tk.ta) * 34;
       // 炮管穿过障碍（隔墙射击）修复：枪口在障碍内则无法开火
       let muzzleBlocked = false;
       for (const o of room.obstacles) {
@@ -725,8 +725,8 @@ function sim(room, dt, now) {
             // 俄军爆反不低于 30% 时，侧面命中（含弹药架区域）不触发殉爆
             const ruSideSafe = q.type === 'ru' && eraBefore >= tt.era * 0.3;
             const ammoHit = tt.ammoZone === 'rear'
-              ? (rx < -21 && Math.abs(ry) < 11)   // 美军：炮塔尾舱（车体后部中央偏窄，按 84x38 比例）
-              : (Math.abs(ry) > 15 && Math.abs(rx) < 26 && !ruSideSafe); // 俄军：侧面中心（爆反≥30%不殉爆）
+              ? (rx < -13 && Math.abs(ry) < 13)   // 美军：炮塔尾舱（车体后部中央偏窄）
+              : (Math.abs(ry) > 17 && Math.abs(rx) < 16 && !ruSideSafe); // 俄军：侧面中心（爆反≥30%不殉爆）
             if (ammoHit) {
               // 弹药架殉爆：先起火再殉爆（起火视觉效果），立即击毁（弱点命中无视反应装甲）
               q.fireT = FIRE_TIME;
