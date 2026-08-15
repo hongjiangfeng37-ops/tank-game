@@ -62,7 +62,7 @@
     { x: 1030, y: 810, w: 240, h: 150 },
     { x: 700, y: 525, w: 200, h: 150 },
   ];
-  const TANK = { r: 22, l: 52, w: 44, maxSpeed: 240, accel: 340, back: 0.62, turn: 3.2, dragF: 0.9, dragL: 3.8, hp: 100, boostMult: 1.3 };
+  const TANK = { rx: 42, ry: 19, l: 84, w: 38, maxSpeed: 240, accel: 340, back: 0.62, turn: 3.2, dragF: 0.9, dragL: 3.8, hp: 100, boostMult: 1.3 };
   const MAG_SIZE = 1;       // 弹匣容量：单发装填（与 server.js 一致）
   const TANK_TYPES = {      // 客户端展示用（与 server.js 一致）
     us: { name: '美军 M1A1标题党', reload: 4, eraMax: 300, pen: 800, penDrop: 100, armor: '600/200/400', armorEra: '900/800/400', color: '#6b8e5a' },
@@ -725,22 +725,39 @@
     collideTankWorld(tk);
   }
   function collideTankWorld(tk) {
-    const minX = WALL_T + TANK.r, maxX = WORLD.w - WALL_T - TANK.r;
-    const minY = WALL_T + TANK.r, maxY = WORLD.h - WALL_T - TANK.r;
+    const ca = Math.cos(tk.a), sa = Math.sin(tk.a);
+    const eRx = Math.abs(TANK.rx * ca) + Math.abs(TANK.ry * sa);
+    const eRy = Math.abs(TANK.rx * sa) + Math.abs(TANK.ry * ca);
+    const minX = WALL_T + eRx, maxX = WORLD.w - WALL_T - eRx;
+    const minY = WALL_T + eRy, maxY = WORLD.h - WALL_T - eRy;
     if (tk.x < minX) { tk.x = minX; if (tk.vx < 0) tk.vx = -tk.vx * 0.3; }
     else if (tk.x > maxX) { tk.x = maxX; if (tk.vx > 0) tk.vx = -tk.vx * 0.3; }
     if (tk.y < minY) { tk.y = minY; if (tk.vy < 0) tk.vy = -tk.vy * 0.3; }
     else if (tk.y > maxY) { tk.y = maxY; if (tk.vy > 0) tk.vy = -tk.vy * 0.3; }
     for (const o of mapObstacles) {
-      const cx = clamp(tk.x, o.x, o.x + o.w);
-      const cy = clamp(tk.y, o.y, o.y + o.h);
-      const dx = tk.x - cx, dy = tk.y - cy;
-      const d2 = dx * dx + dy * dy;
-      if (d2 < TANK.r * TANK.r) {
-        const d = Math.sqrt(d2) || 0.001;
-        const nx = dx / d, ny = dy / d;
-        tk.x = cx + nx * TANK.r;
-        tk.y = cy + ny * TANK.r;
+      const ox1 = (o.x - tk.x) / eRx, ox2 = (o.x + o.w - tk.x) / eRx;
+      const oy1 = (o.y - tk.y) / eRy, oy2 = (o.y + o.h - tk.y) / eRy;
+      const cxs = clamp(0, ox1, ox2), cys = clamp(0, oy1, oy2);
+      const d2 = cxs * cxs + cys * cys;
+      if (d2 < 1) {
+        const penX = cxs * eRx, penY = cys * eRy;
+        const penD = Math.hypot(penX, penY);
+        let nx, ny, R;
+        if (penD > 0.5) {
+          nx = penX / penD; ny = penY / penD;
+          R = 1 / Math.sqrt((nx * nx) / (eRx * eRx) + (ny * ny) / (eRy * eRy));
+          tk.x += nx * (R - penD);
+          tk.y += ny * (R - penD);
+        } else {
+          const dl = Math.abs(ox1), dr = Math.abs(ox2), dt2 = Math.abs(oy1), db = Math.abs(oy2);
+          const minD = Math.min(dl, dr, dt2, db);
+          if (minD === dl) { nx = -1; ny = 0; R = eRx; }
+          else if (minD === dr) { nx = 1; ny = 0; R = eRx; }
+          else if (minD === dt2) { nx = 0; ny = -1; R = eRy; }
+          else { nx = 0; ny = 1; R = eRy; }
+          tk.x += nx * (R - minD * (nx !== 0 ? eRx : eRy));
+          tk.y += ny * (R - minD * (ny !== 0 ? eRy : eRx));
+        }
         const vn = tk.vx * nx + tk.vy * ny;
         if (vn < 0) { tk.vx -= nx * vn * 1.7; tk.vy -= ny * vn * 1.7; }
       }
@@ -956,9 +973,10 @@
     ctx.rotate(t.a);
     const bodyImg = t.ty === 'ru' ? TANK_IMAGES.ruBody : TANK_IMAGES.usBody;
     if (bodyImg) {
-      // 车体铺满碰撞盒 52x44（大小与原版一致，像素画拉伸可接受）
+      // 等比绘制：高度 38 匹配碰撞宽（保持真实长条比例，不拉伸变形）
+      const s = 38 / bodyImg.height;
       ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(bodyImg, -26, -22, 52, 44);
+      ctx.drawImage(bodyImg, -bodyImg.width * s / 2, -bodyImg.height * s / 2, bodyImg.width * s, bodyImg.height * s);
     } else {
       ctx.fillStyle = color;
       rr(-25, -13, 50, 26, 6); ctx.fill();
@@ -983,9 +1001,10 @@
     ctx.rotate(t.ta + (t.prt && !t.prt[1] ? 0.5 : 0));
     const turImg = t.ty === 'ru' ? TANK_IMAGES.ruTurret : TANK_IMAGES.usTurret;
     if (turImg) {
-      // 炮塔铺满 52x44（与车体一致，不再"小头爸爸"）
+      // 炮塔等比绘制（高 38 与车体一致，含炮管，保持真实比例）
+      const s = 38 / turImg.height;
       ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(turImg, -26, -22, 52, 44);
+      ctx.drawImage(turImg, -turImg.width * s / 2, -turImg.height * s / 2, turImg.width * s, turImg.height * s);
     } else {
       ctx.fillStyle = t.ty === 'ru' ? '#4a5a48' : '#46524a';
       ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.fill();
@@ -1505,7 +1524,7 @@
         const spd = 620;
         const tt = TANK_TYPES[selfType] || TANK_TYPES.us;
         predBullets.push({
-          x: pred.x + Math.cos(ta) * 34, y: pred.y + Math.sin(ta) * 34,
+          x: pred.x + Math.cos(ta) * 48, y: pred.y + Math.sin(ta) * 48,
           vx: Math.cos(ta) * spd, vy: Math.sin(ta) * spd,
           pen: tt.pen, t: performance.now(),
         });
@@ -1523,6 +1542,7 @@
       pb.x += pb.vx * dt;
       pb.y += pb.vy * dt;
       // 命中检测：敌方坦克 + 自己（反弹回来的炮弹会自伤，与服务器一致；players 里含自己）
+      // 炮口 48 > 命中框半长 48，出生点必在框外，无需出生保护
       let hitTank = false;
       for (const p of players.values()) {
         if (!p.render) continue;
