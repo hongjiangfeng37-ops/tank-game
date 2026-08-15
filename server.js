@@ -766,8 +766,8 @@ function sim(room, dt, now) {
                 q.lastHitBy = b.ownerId;
                 // 随机损坏一个模块（美军无装弹机，排除 loader；模块损坏只在击穿时发生，跳弹一律不坏）
                 let avail = PARTS_LIST.filter((n) => q.parts[n] && (q.type === 'ru' || n !== 'loader'));
-                // 美军机制：爆反不满血时，正面击穿 15% 坏炮塔（并入击穿判定，未击穿不坏炮塔）
-                if (q.type === 'us' && zone === 'front' && q.era < tt.era && q.parts.turret && Math.random() < 0.15) {
+                // 美军机制：爆反不满血时，正面击穿 30% 坏炮塔（并入击穿判定，未击穿不坏炮塔）
+                if (q.type === 'us' && zone === 'front' && q.era < tt.era && q.parts.turret && Math.random() < 0.3) {
                   q.parts.turret = false;
                   brokenParts.push('turret');
                 } else if (q.type === 'us' && zone === 'side' && q.parts.turret && Math.random() < 0.4) {
