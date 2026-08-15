@@ -18,6 +18,42 @@
   // ---------------- 世界常量（与 server.js 一致） ----------------
   const WORLD = { w: 1600, h: 1200 };
   const WALL_T = 24;
+  // 线段与轴对齐矩形碰撞（与服务器 lib-geom.js 一致，本地子弹反弹用）
+  function segRectHit(x0, y0, x1, y1, r) {
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    let txIn = 0, txOut = 1, nxSide = 0;
+    if (Math.abs(dx) < 1e-9) {
+      if (x0 < r.x || x0 > r.x + r.w) return null;
+    } else {
+      let t1 = (r.x - x0) / dx;
+      let t2 = (r.x + r.w - x0) / dx;
+      let n1 = -1, n2 = 1;
+      if (t1 > t2) { const t = t1; t1 = t2; t2 = t; const n = n1; n1 = n2; n2 = n; }
+      txIn = t1; txOut = t2; nxSide = n1;
+    }
+    let tyIn = 0, tyOut = 1, nySide = 0;
+    if (Math.abs(dy) < 1e-9) {
+      if (y0 < r.y || y0 > r.y + r.h) return null;
+    } else {
+      let t1 = (r.y - y0) / dy;
+      let t2 = (r.y + r.h - y0) / dy;
+      let n1 = -1, n2 = 1;
+      if (t1 > t2) { const t = t1; t1 = t2; t2 = t; const n = n1; n1 = n2; n2 = n; }
+      tyIn = t1; tyOut = t2; nySide = n1;
+    }
+    const tIn = Math.max(txIn, tyIn);
+    const tOut = Math.min(txOut, tyOut);
+    if (tIn > 0 && tIn <= 1 && tIn <= tOut) {
+      return {
+        x: x0 + dx * tIn,
+        y: y0 + dy * tIn,
+        nx: tIn === txIn ? nxSide : 0,
+        ny: tIn === tyIn ? nySide : 0,
+      };
+    }
+    return null;
+  }
   // 迷宫由服务器每回合随机生成并通过 map 消息下发；初始为简单占位布局
   let mapObstacles = [
     { x: 330, y: 240, w: 240, h: 150 },
@@ -29,8 +65,8 @@
   const TANK = { r: 22, l: 52, w: 44, maxSpeed: 240, accel: 340, back: 0.62, turn: 3.2, dragF: 0.9, dragL: 3.8, hp: 100, boostMult: 1.3 };
   const MAG_SIZE = 1;       // 弹匣容量：单发装填（与 server.js 一致）
   const TANK_TYPES = {      // 客户端展示用（与 server.js 一致）
-    us: { name: '美军 M1A2', reload: 4, era: 2, color: '#6b8e5a' },
-    ru: { name: '俄军 T90M', reload: 6, era: 3, color: '#5f7a52' },
+    us: { name: '美军 M1A2', reload: 4, eraMax: 300, pen: 800, penDrop: 100, armor: '600/200/400', armorEra: '900/800/400', color: '#6b8e5a' },
+    ru: { name: '俄军 T90M', reload: 6, eraMax: 450, pen: 750, penDrop: 200, armor: '800/150/700', armorEra: '1200/500/700', color: '#5f7a52' },
   };
   const PALETTE = ['#ff5d5d', '#4fc3f7', '#66bb6a', '#ffee58', '#ff8a65', '#ba68c8', '#4dd0e1', '#f06292', '#aed581', '#90a4ae'];
   const PUP_COLOR = { health: '#4caf50', shield: '#4dd0e1', rapid: '#ffca28', triple: '#ff7043' };
@@ -123,7 +159,7 @@
   let selfRepair = 0;           // 维修进度(秒)
   let selfFire = 0;             // 起火剩余秒数
   let selfType = 'us';          // 坦克型号
-  let selfEra = 2;              // 反应装甲层数
+  let selfEra = 300;            // 反应装甲血量（服务器权威同步）
 
   const keys = {};
   const mouse = { x: 0, y: 0, down: false, active: false };
@@ -403,7 +439,7 @@
         case 'hit':
           sfx.hit();
           spawnParticles(e.x, e.y, '#ff8a65', 7, 2.2);
-          if (e.id === myId) zoneNote(e.zone, e.parts);
+          if (e.id === myId) zoneNote(e.zone, e.parts, e.pen);
           break;
         case 'boom':
           sfx.boom();
@@ -465,10 +501,13 @@
     clearTimeout(noteTimer);
     noteTimer = setTimeout(() => show(els.damageNote, false), 2200);
   }
-  function zoneNote(zone, parts) {
+  function zoneNote(zone, parts, pen) {
     const zname = { front: '正面命中', side: '侧面命中', back: '背面命中' }[zone] || '命中';
-    const pnames = (parts || []).map((p) => ({ track: '履带', turret: '炮塔', engine: '发动机', ammo: '弹药架', optics: '观瞄' }[p] || p)).join('、');
-    showDamageNote(pnames ? zname + '！' + pnames + ' 损坏' : zname + '！', false);
+    const pnames = (parts || []).map((p) => ({ track: '履带', turret: '炮塔', engine: '发动机', ammo: '弹药架', optics: '观瞄', loader: '装弹机' }[p] || p)).join('、');
+    let text;
+    if (pen) text = pnames ? zname + '！' + pnames + ' 损坏' : zname + '！击穿';
+    else text = pnames ? '未击穿·' + zname + '！' + pnames + ' 损坏' : '未击穿（跳弹）';
+    showDamageNote(text, !!pen);
   }
   function addKillfeed(killer, victim, reason) {
     const div = document.createElement('div');
@@ -1127,12 +1166,14 @@
       els.ammoBox.textContent = '🔫 已装填';
       els.ammoBox.classList.remove('reloading');
     }
-    // 反应装甲显示
+    // 反应装甲显示（血条制：命中扣 伤害/2，扣完失效）
+    const eraMax = (TANK_TYPES[selfType] && TANK_TYPES[selfType].eraMax) || 200;
     if (selfEra > 0) {
-      els.eraBox.textContent = '🛡️'.repeat(Math.min(4, selfEra)) + '×' + selfEra;
+      const pct = Math.max(0, Math.min(100, Math.round(selfEra / eraMax * 100)));
+      els.eraBox.textContent = '🛡️ 爆反 ' + pct + '%';
       els.eraBox.classList.remove('no-era');
     } else {
-      els.eraBox.textContent = '🛡️ 装甲失效';
+      els.eraBox.textContent = '🛡️ 爆反耗尽';
       els.eraBox.classList.add('no-era');
     }
     els.buffs.innerHTML = '';
@@ -1472,24 +1513,27 @@
       if (!selfParts.loader) reload *= 2; // 俄军装弹机损坏：装填翻倍
       if (selfBuffs.rap > 0) reload *= 0.5;
       localReload = reload;
-      // 本地子弹预测：立即显示自己发射的子弹（不等服务器往返）
+      // 本地子弹预测：立即显示自己发射的子弹（不等服务器往返），穿深与服务器一致
       if (pred) {
         const ta = autoTurret ? pred.a : mouseAngle;
         const spd = 620;
+        const tt = TANK_TYPES[selfType] || TANK_TYPES.us;
         predBullets.push({
           x: pred.x + Math.cos(ta) * 34, y: pred.y + Math.sin(ta) * 34,
           vx: Math.cos(ta) * spd, vy: Math.sin(ta) * spd,
-          t: performance.now(),
+          pen: tt.pen, t: performance.now(),
         });
         if (selfBuffs.trp > 0) {
-          predBullets.push({ x: pred.x + Math.cos(ta - 0.18) * 34, y: pred.y + Math.sin(ta - 0.18) * 34, vx: Math.cos(ta - 0.18) * spd, vy: Math.sin(ta - 0.18) * spd, t: performance.now() });
-          predBullets.push({ x: pred.x + Math.cos(ta + 0.18) * 34, y: pred.y + Math.sin(ta + 0.18) * 34, vx: Math.cos(ta + 0.18) * spd, vy: Math.sin(ta + 0.18) * spd, t: performance.now() });
+          predBullets.push({ x: pred.x + Math.cos(ta - 0.18) * 34, y: pred.y + Math.sin(ta - 0.18) * 34, vx: Math.cos(ta - 0.18) * spd, vy: Math.sin(ta - 0.18) * spd, pen: tt.pen, t: performance.now() });
+          predBullets.push({ x: pred.x + Math.cos(ta + 0.18) * 34, y: pred.y + Math.sin(ta + 0.18) * 34, vx: Math.cos(ta + 0.18) * spd, vy: Math.sin(ta + 0.18) * spd, pen: tt.pen, t: performance.now() });
         }
       }
     }
-    // 推进/清理本地预测子弹（1.2 秒后服务器快照已接管；含简化反弹避免穿墙视觉）
+    // 推进/清理本地预测子弹（反弹几何与服务器一致：线段检测 + 穿深衰减，1.2 秒后服务器快照接管）
+    const penDrop = (TANK_TYPES[selfType] || TANK_TYPES.us).penDrop || 100;
     for (let i = predBullets.length - 1; i >= 0; i--) {
       const pb = predBullets[i];
+      const px0 = pb.x, py0 = pb.y;
       pb.x += pb.vx * dt;
       pb.y += pb.vy * dt;
       // 命中敌方坦克：本地子弹立即消失（旋转矩形判定，与服务器一致）
@@ -1508,20 +1552,31 @@
         }
       }
       if (hitTank) { predBullets.splice(i, 1); continue; }
-      // 世界墙反弹
-      if (pb.x < WALL_T + 5) { pb.x = WALL_T + 5; pb.vx = -pb.vx; }
-      else if (pb.x > WORLD.w - WALL_T - 5) { pb.x = WORLD.w - WALL_T - 5; pb.vx = -pb.vx; }
-      if (pb.y < WALL_T + 5) { pb.y = WALL_T + 5; pb.vy = -pb.vy; }
-      else if (pb.y > WORLD.h - WALL_T - 5) { pb.y = WORLD.h - WALL_T - 5; pb.vy = -pb.vy; }
-      // 障碍反弹（简化 AABB，服务器会校正）
-      for (const o of mapObstacles) {
-        if (pb.x > o.x - 5 && pb.x < o.x + o.w + 5 && pb.y > o.y - 5 && pb.y < o.y + o.h + 5) {
-          if (pb.vx > 0 && pb.x < o.x) { pb.x = o.x - 5; pb.vx = -pb.vx; }
-          else if (pb.vx < 0 && pb.x > o.x + o.w) { pb.x = o.x + o.w + 5; pb.vx = -pb.vx; }
-          else if (pb.vy > 0 && pb.y < o.y) { pb.y = o.y - 5; pb.vy = -pb.vy; }
-          else if (pb.vy < 0 && pb.y > o.y + o.h) { pb.y = o.y + o.h + 5; pb.vy = -pb.vy; }
-          break;
+      // 世界墙反弹（与服务器同：反弹扣穿深，扣完消失）
+      let bounced = false;
+      if (pb.x < WALL_T + 5) { pb.x = WALL_T + 5; pb.vx = -pb.vx; bounced = true; }
+      else if (pb.x > WORLD.w - WALL_T - 5) { pb.x = WORLD.w - WALL_T - 5; pb.vx = -pb.vx; bounced = true; }
+      if (!bounced && pb.y < WALL_T + 5) { pb.y = WALL_T + 5; pb.vy = -pb.vy; bounced = true; }
+      else if (!bounced && pb.y > WORLD.h - WALL_T - 5) { pb.y = WORLD.h - WALL_T - 5; pb.vy = -pb.vy; bounced = true; }
+      // 障碍反弹：线段检测（与服务器 segRectHit 一致，反弹轨迹完整）
+      if (!bounced) {
+        for (const o of mapObstacles) {
+          const hit = segRectHit(px0, py0, pb.x, pb.y, o);
+          if (hit) {
+            pb.x = hit.x; pb.y = hit.y;
+            const vn = pb.vx * hit.nx + pb.vy * hit.ny;
+            if (vn < 0) {
+              pb.vx -= 2 * vn * hit.nx;
+              pb.vy -= 2 * vn * hit.ny;
+              bounced = true;
+            }
+            break;
+          }
         }
+      }
+      if (bounced) {
+        pb.pen -= penDrop;
+        if (pb.pen <= 0) { predBullets.splice(i, 1); continue; }
       }
       if (performance.now() - pb.t > 1200) predBullets.splice(i, 1);
     }
