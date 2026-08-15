@@ -1039,8 +1039,12 @@ function onMessage(conn, buf) {
 }
 
 // ---------------- 主循环 ----------------
+// tick 性能统计：诊断高延迟环境下服务器是否掉帧（每 60 秒打印一次平均/最大 tick 耗时）
+let tickStats = { n: 0, sum: 0, max: 0 };
+let lastTickStat = Date.now();
 setInterval(() => {
-  const now = Date.now();
+  const t0 = Date.now();
+  const now = t0;
   for (const room of rooms.values()) {
     room.tick++;
     if (room.phase === 'countdown') {
@@ -1056,6 +1060,16 @@ setInterval(() => {
       if (room.phaseT <= 0) startRound(room);
     }
     if (room.tick % SNAP_EVERY === 0) broadcast(room);
+  }
+  const dt = Date.now() - t0;
+  tickStats.n++;
+  tickStats.sum += dt;
+  if (dt > tickStats.max) tickStats.max = dt;
+  if (now - lastTickStat >= 60000) {
+    const avg = tickStats.sum / tickStats.n;
+    console.log('[tick] ' + tickStats.n + ' ticks 平均 ' + avg.toFixed(2) + 'ms 最大 ' + tickStats.max + 'ms' + (avg > 15 ? ' ⚠ 掉帧' : ''));
+    tickStats = { n: 0, sum: 0, max: 0 };
+    lastTickStat = now;
   }
 }, TICK_MS);
 
