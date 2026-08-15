@@ -986,10 +986,13 @@
       // 炮盾（前尖处炮管根部）
       '<path d="M47,17 L55,25 L47,33 L42,25 Z" fill="#7a6c46" stroke="#3a3524" stroke-width="1"/>' +
       // 舱盖（跨中脊）+ 观瞄镜
-      '<circle cx="26" cy="23.5" r="6.2" fill="#a08a55" stroke="#3a3524" stroke-width="1.1"/>' +
-      '<circle cx="26" cy="23.5" r="2.2" fill="#6f5f3c"/>' +
-      '<rect x="30" y="12" width="6" height="3.2" rx="1" fill="#2a2f3a"/>' +
-      '<rect x="36" y="15" width="5" height="2.8" rx="1" fill="#2a2f3a"/>' +
+      '<circle cx="26" cy="23.5" r="6.8" fill="#a08a55" stroke="#3a3524" stroke-width="1.2"/>' +
+      '<circle cx="26" cy="23.5" r="2.4" fill="#6f5f3c"/>' +
+      // 上表面棱线（与中脊平行，强调斜面）
+      '<path d="M44,13 L17,10" stroke="#e8d7a4" stroke-width="1" opacity="0.5" fill="none"/>' +
+      '<path d="M44,39 L17,42" stroke="#6f5f3c" stroke-width="1" opacity="0.5" fill="none"/>' +
+      '<rect x="30" y="11.5" width="7" height="3.6" rx="1" fill="#2a2f3a"/>' +
+      '<rect x="37" y="14.5" width="5.5" height="3" rx="1" fill="#2a2f3a"/>' +
       // 尾舱储物篮（后部斜纹）
       '<line x1="14" y1="10" x2="8" y2="16" stroke="#5c4f31" stroke-width="1.1"/>' +
       '<line x1="14" y1="16" x2="8" y2="22" stroke="#5c4f31" stroke-width="1.1"/>' +
@@ -1026,40 +1029,46 @@
       '<circle cx="94.5" cy="25" r="1.7" fill="#ffe9a3"/>' +
       '<circle cx="94.5" cy="53" r="1.7" fill="#ffe9a3"/>' +
       '</svg>',
-    // 俄军炮塔：圆形 + 全圆爆反(ERA)方块网格（俯视核心）
+    // 俄军炮塔：大圆形 + 整面 4x4 大块爆反(ERA)铺满 + 大舱盖红外灯（俯视核心，做大幅面）
     ruTurret: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 52">' +
       '<defs><linearGradient id="rutg" x1="0" y1="0" x2="0" y2="1">' +
-      '<stop offset="0" stop-color="#627450"/><stop offset="1" stop-color="#44533a"/>' +
+      '<stop offset="0" stop-color="#6b7f53"/><stop offset="1" stop-color="#44533a"/>' +
       '</linearGradient></defs>' +
-      // 圆炮塔主体
-      '<circle cx="27" cy="26" r="17.5" fill="url(#rutg)" stroke="#222b1d" stroke-width="1.5"/>' +
-      // 爆反(ERA)方块：4x4 全圆网格（中心留操作区给舱盖）
-      '<rect x="13" y="14" width="5.5" height="5.5" fill="#4d5e35" stroke="#222b1d" stroke-width="0.7"/>' +
-      '<rect x="20" y="14" width="5.5" height="5.5" fill="#4d5e35" stroke="#222b1d" stroke-width="0.7"/>' +
-      '<rect x="27" y="14" width="5.5" height="5.5" fill="#4d5e35" stroke="#222b1d" stroke-width="0.7"/>' +
-      '<rect x="34" y="14" width="5.5" height="5.5" fill="#4d5e35" stroke="#222b1d" stroke-width="0.7"/>' +
-      '<rect x="13" y="21" width="5.5" height="5.5" fill="#4d5e35" stroke="#222b1d" stroke-width="0.7"/>' +
-      '<rect x="20" y="21" width="5.5" height="5.5" fill="#4d5e35" stroke="#222b1d" stroke-width="0.7"/>' +
-      '<rect x="27" y="21" width="5.5" height="5.5" fill="#4d5e35" stroke="#222b1d" stroke-width="0.7"/>' +
-      '<rect x="34" y="21" width="5.5" height="5.5" fill="#4d5e35" stroke="#222b1d" stroke-width="0.7"/>' +
-      '<rect x="13" y="28" width="5.5" height="5.5" fill="#4d5e35" stroke="#222b1d" stroke-width="0.7"/>' +
-      '<rect x="20" y="28" width="5.5" height="5.5" fill="#4d5e35" stroke="#222b1d" stroke-width="0.7"/>' +
-      '<rect x="27" y="28" width="5.5" height="5.5" fill="#4d5e35" stroke="#222b1d" stroke-width="0.7"/>' +
-      '<rect x="34" y="28" width="5.5" height="5.5" fill="#4d5e35" stroke="#222b1d" stroke-width="0.7"/>' +
-      '<rect x="13" y="35" width="5.5" height="5.5" fill="#4d5e35" stroke="#222b1d" stroke-width="0.7"/>' +
-      '<rect x="20" y="35" width="5.5" height="5.5" fill="#4d5e35" stroke="#222b1d" stroke-width="0.7"/>' +
-      '<rect x="27" y="35" width="5.5" height="5.5" fill="#4d5e35" stroke="#222b1d" stroke-width="0.7"/>' +
-      '<rect x="34" y="35" width="5.5" height="5.5" fill="#4d5e35" stroke="#222b1d" stroke-width="0.7"/>' +
-      // 舱盖（中心）
-      '<circle cx="26.5" cy="28.5" r="5.2" fill="#4c5c3e" stroke="#222b1d" stroke-width="1"/>' +
-      '<circle cx="26.5" cy="28.5" r="1.8" fill="#2f3a26"/>' +
-      // 炮长镜（上方）
-      '<rect x="27" y="11" width="7" height="3.4" rx="1" fill="#2a3526"/>' +
-      // 红外大灯（右侧 ERA 上，T80 标志）
-      '<circle cx="41" cy="30" r="3.2" fill="#2a3526" stroke="#222b1d" stroke-width="0.8"/>' +
-      '<circle cx="41" cy="30" r="1.4" fill="#c9d6c0"/>' +
+      // 大圆炮塔主体
+      '<circle cx="27" cy="26" r="19" fill="url(#rutg)" stroke="#222b1d" stroke-width="1.7"/>' +
+      '<circle cx="27" cy="26" r="15.5" fill="none" stroke="#222b1d" stroke-width="0.8" opacity="0.35"/>' +
+      // 爆反(ERA)大块：4x4=16 块 8x8 铺满整个圆面
+      '<rect x="9.5" y="9.5" width="8" height="8" fill="#4d5e35" stroke="#222b1d" stroke-width="0.9"/>' +
+      '<rect x="18.5" y="9.5" width="8" height="8" fill="#4d5e35" stroke="#222b1d" stroke-width="0.9"/>' +
+      '<rect x="27.5" y="9.5" width="8" height="8" fill="#4d5e35" stroke="#222b1d" stroke-width="0.9"/>' +
+      '<rect x="36.5" y="9.5" width="8" height="8" fill="#4d5e35" stroke="#222b1d" stroke-width="0.9"/>' +
+      '<rect x="9.5" y="18.5" width="8" height="8" fill="#4d5e35" stroke="#222b1d" stroke-width="0.9"/>' +
+      '<rect x="18.5" y="18.5" width="8" height="8" fill="#4d5e35" stroke="#222b1d" stroke-width="0.9"/>' +
+      '<rect x="27.5" y="18.5" width="8" height="8" fill="#4d5e35" stroke="#222b1d" stroke-width="0.9"/>' +
+      '<rect x="36.5" y="18.5" width="8" height="8" fill="#4d5e35" stroke="#222b1d" stroke-width="0.9"/>' +
+      '<rect x="9.5" y="27.5" width="8" height="8" fill="#4d5e35" stroke="#222b1d" stroke-width="0.9"/>' +
+      '<rect x="18.5" y="27.5" width="8" height="8" fill="#4d5e35" stroke="#222b1d" stroke-width="0.9"/>' +
+      '<rect x="27.5" y="27.5" width="8" height="8" fill="#4d5e35" stroke="#222b1d" stroke-width="0.9"/>' +
+      '<rect x="36.5" y="27.5" width="8" height="8" fill="#4d5e35" stroke="#222b1d" stroke-width="0.9"/>' +
+      '<rect x="9.5" y="36.5" width="8" height="8" fill="#4d5e35" stroke="#222b1d" stroke-width="0.9"/>' +
+      '<rect x="18.5" y="36.5" width="8" height="8" fill="#4d5e35" stroke="#222b1d" stroke-width="0.9"/>' +
+      '<rect x="27.5" y="36.5" width="8" height="8" fill="#4d5e35" stroke="#222b1d" stroke-width="0.9"/>' +
+      '<rect x="36.5" y="36.5" width="8" height="8" fill="#4d5e35" stroke="#222b1d" stroke-width="0.9"/>' +
+      // 中心大舱盖（跨四块爆反，T80 标志性大舱盖）
+      '<circle cx="27" cy="26.5" r="7.5" fill="#4c5c3e" stroke="#222b1d" stroke-width="1.3"/>' +
+      '<circle cx="27" cy="26.5" r="2.5" fill="#2f3a26"/>' +
+      '<line x1="21" y1="26.5" x2="33" y2="26.5" stroke="#222b1d" stroke-width="0.9" opacity="0.75"/>' +
+      '<line x1="27" y1="20.5" x2="27" y2="23.5" stroke="#222b1d" stroke-width="0.9" opacity="0.75"/>' +
+      // 大炮长镜（前上）
+      '<rect x="25.5" y="6.5" width="9" height="4.2" rx="1.2" fill="#2a3526" stroke="#222b1d" stroke-width="0.8"/>' +
+      // 大红外大灯（右前，T80 标志）
+      '<circle cx="40.5" cy="31.5" r="4.2" fill="#2a3526" stroke="#222b1d" stroke-width="0.9"/>' +
+      '<circle cx="40.5" cy="31.5" r="1.9" fill="#c9d6c0"/>' +
       // 横风传感器天线
-      '<line x1="30" y1="6.5" x2="25" y2="1" stroke="#2a3526" stroke-width="1.2"/>' +
+      '<line x1="31" y1="5.5" x2="25" y2="0.5" stroke="#2a3526" stroke-width="1.4"/>' +
+      // 尾部天线 + 后部储物箱
+      '<line x1="12" y1="41" x2="6" y2="46.5" stroke="#2a3526" stroke-width="1.1" opacity="0.8"/>' +
+      '<rect x="8" y="33" width="3.5" height="4" rx="0.8" fill="#3d4a34" stroke="#222b1d" stroke-width="0.7"/>' +
       '</svg>',
   };
   const TANK_IMAGES = {};
@@ -1111,9 +1120,9 @@
     ctx.rotate(t.ta + (t.prt && !t.prt[1] ? 0.5 : 0));
     const turImg = t.ty === 'ru' ? TANK_IMAGES.ruTurret : TANK_IMAGES.usTurret;
     if (turImg) {
-      // 炮塔本体（不含炮管，30x28 原版尺寸）
+      // 炮塔本体（大炮塔：40x37 盖住车体大半，不含炮管）
       ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(turImg, -15, -14, 30, 28);
+      ctx.drawImage(turImg, -20, -18.5, 40, 37);
     } else {
       ctx.fillStyle = t.ty === 'ru' ? '#4a5a48' : '#46524a';
       ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.fill();
