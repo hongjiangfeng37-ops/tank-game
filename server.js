@@ -497,7 +497,7 @@ function sim(room, dt, now) {
         p.mag = 0;
         // 装填时间：按型号，装弹机损坏翻倍，速射道具减半
         let reload = tt.reload;
-        if (p.parts.loader === false) reload *= 2; // 俄军装弹机损坏
+        if (tt.hasLoader && p.parts.loader === false) reload *= 2; // 俄军装弹机损坏；美军无装弹机
         if (rapid) reload *= 0.5;
         p.reloadT = reload;
         const fire = (ang) => {
@@ -596,7 +596,7 @@ function sim(room, dt, now) {
     // 命中坦克（模块化损伤：旋转矩形碰撞与贴图轮廓吻合 / 弹药架弱点区域 / 装甲厚度×炮弹穿深判定 / 爆反血条）
     if (!dead) {
       for (const q of alive) {
-        if (q.id === b.ownerId) continue;
+        // 允许命中自己：反弹回来的炮弹同样造成伤害（炮口在车体前方 34px，正常开火不会立即自伤）
         const t2 = q.tank;
         // 命中点局部坐标：+x = 坦克车头方向（子弹相对坦克，符号与车头朝向一致）
         const dx = b.x - t2.x, dy = b.y - t2.y;
@@ -614,11 +614,15 @@ function sim(room, dt, now) {
             const zone = rx > TANK.l * 0.12 ? 'front' : (rx < -TANK.l * 0.12 ? 'back' : 'side');
             const dmg = zone === 'front' ? 20 : (zone === 'back' ? 40 : 30); // 部位基础伤害
             // 弹药架弱点区域（按型号设计，贴图对应位置）：击中必殉爆
+            // 美军：炮塔尾舱（车体后部偏窄区域，精细判定）；俄军：侧面中心
             const ammoHit = tt.ammoZone === 'rear'
-              ? (rx < -12 && Math.abs(ry) < 15)   // 美军：炮塔后方（车体后部中央）
+              ? (rx < -13 && Math.abs(ry) < 13)   // 美军：炮塔尾舱（车体后部中央偏窄）
               : (Math.abs(ry) > 15 && Math.abs(rx) < 16); // 俄军：侧面中心
             if (ammoHit) {
-              // 弹药架殉爆：立即击毁（弱点命中无视反应装甲）
+              // 弹药架殉爆：先起火再殉爆（起火视觉效果），立即击毁（弱点命中无视反应装甲）
+              q.fireT = FIRE_TIME;
+              q.fireDmg = 0;
+              room.pendingEvents.push({ k: 'fire', id: q.id, x: Math.round(t2.x), y: Math.round(t2.y) });
               q.alive = false;
               q.deadAt = now;
               const killer = room.players.get(b.ownerId);
@@ -646,8 +650,12 @@ function sim(room, dt, now) {
                 // 完全击穿：全伤害 + 随机其他部位模块 + 起火/殉爆概率
                 t2.hp -= dmg;
                 q.lastHitBy = b.ownerId;
-                const avail = PARTS_LIST.filter((n) => q.parts[n]);
-                if (avail.length) {
+                // 随机损坏一个模块（美军无装弹机，排除 loader；美军正面易坏炮塔作为后方弹药架弱点的平衡）
+                let avail = PARTS_LIST.filter((n) => q.parts[n] && (q.type === 'ru' || n !== 'loader'));
+                if (q.type === 'us' && zone === 'front' && q.parts.turret && Math.random() < 0.5) {
+                  q.parts.turret = false;
+                  brokenParts.push('turret');
+                } else if (avail.length) {
                   const pick = avail[rnd(avail.length)];
                   q.parts[pick] = false;
                   brokenParts.push(pick);
