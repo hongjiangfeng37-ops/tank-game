@@ -529,9 +529,6 @@ function sim(room, dt, now) {
     const px = b.x, py = b.y;   // 上一帧位置（线段碰撞防隧穿）
     b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
     let dead = b.life <= 0;
-    if (process.env.TK_DEBUG_BULLET3 === '1' && b.x > 1300 && b.x < 1550 && b.y < 200) {
-      console.log('[B3] ' + room.tick + ' x=' + Math.round(b.x) + ' y=' + Math.round(b.y) + ' v=' + Math.round(b.vx) + ',' + Math.round(b.vy) + ' px=' + Math.round(px) + ',' + Math.round(py));
-    }
 
     // 边界反弹
     if (!dead && b.x < WALL_T + BULLET.r) { b.x = WALL_T + BULLET.r; b.vx = -b.vx; if (--b.bounces < 0) dead = true; }
@@ -596,6 +593,7 @@ function sim(room, dt, now) {
             const tt = TANK_TYPES[q.type];
             // 部位判定：命中点在车体的前后/侧面位置（与贴图视觉一致）
             const zone = rx > TANK.l * 0.12 ? 'front' : (rx < -TANK.l * 0.12 ? 'back' : 'side');
+            const dmg = zone === 'front' ? 20 : (zone === 'back' ? 40 : 30); // 部位基础伤害
             // 弹药架弱点区域（按型号设计，贴图对应位置）：击中必殉爆
             const ammoHit = tt.ammoZone === 'rear'
               ? (rx < -12 && Math.abs(ry) < 15)   // 美军：炮塔后方（车体后部中央）
@@ -633,7 +631,6 @@ function sim(room, dt, now) {
                 }
               } else {
                 // 击穿：全伤害 + 反应装甲消耗 + 区域模块损坏
-                const dmg = zone === 'front' ? 20 : (zone === 'back' ? 40 : 30);
                 t2.hp -= dmg;
                 q.lastHitBy = b.ownerId;
                 if (q.era > 0) q.era--;
