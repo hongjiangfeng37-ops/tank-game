@@ -1578,7 +1578,8 @@
         pb.pen -= penDrop;
         if (pb.pen <= 0) { predBullets.splice(i, 1); continue; }
       }
-      if (performance.now() - pb.t > 1200) predBullets.splice(i, 1);
+      // 寿命与服务器一致（5.5s）：反弹中的炮弹必须渲染完整，不能过早消失
+      if (performance.now() - pb.t > 5500) predBullets.splice(i, 1);
     }
     sendPing(now);
     stepPred(dt);
@@ -1765,6 +1766,54 @@
         reportStage('error:' + e.message);
         console.log('FACING 异常: ' + e.message);
       }
+    })();
+  }
+
+  // ---------------- 反弹渲染测试模式（?bounce=1：朝左墙开火，验证反弹炮弹渲染完整） ----------------
+  if (new URLSearchParams(location.search).has('bounce')) {
+    const sleepB = (ms) => new Promise((r) => setTimeout(r, ms));
+    (async () => {
+      const stg = (s) => {
+        try { fetch('http://127.0.0.1:8125/report', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stage: s }) }); } catch (e) { /* ignore */ }
+      };
+      const report = { bullets: 0, bounces: 0, xs: [], err: '' };
+      try {
+        stg('boot');
+        for (let i = 0; i < 100 && !window.__gameBooted; i++) await sleepB(100);
+        stg('menu');
+        const el = { name: document.getElementById('nameInput'), create: document.getElementById('btnCreate'), start: document.getElementById('btnStart'), lobby: document.getElementById('lobby') };
+        el.name.value = '反弹测试';
+        el.create.click();
+        for (let i = 0; i < 80 && el.lobby.classList.contains('hidden'); i++) await sleepB(100);
+        stg('lobby');
+        el.start.click();
+        for (let i = 0; i < 200 && (phase !== 'play' || !pred); i++) await sleepB(100);
+        stg('play:' + phase);
+        await sleepB(2000);
+        // 朝左墙开火（本地预测子弹 + 服务器双份；反弹后应持续渲染）
+        autoTurret = false;
+        mouseAngle = Math.PI;
+        await sleepB(200);
+        keys.Space = true;
+        await sleepB(150);
+        keys.Space = false;
+        // 等 3.5 秒（旧逻辑 1.2s 后本地子弹已被删除，主视角将无子弹渲染）
+        await sleepB(3500);
+        report.bullets = predBullets.length;
+        report.xs = predBullets.map((p) => Math.round(p.x)).slice(0, 30);
+        // 反弹次数：vx 方向翻转次数
+        let bounces = 0, prevV = 0;
+        for (const p of predBullets) {
+          const v = Math.sign(p.vx);
+          if (v !== 0 && prevV !== 0 && v !== prevV) bounces++;
+          prevV = v;
+        }
+        report.bounces = bounces;
+      } catch (e) { report.err = e.message; stg('error:' + e.message); }
+      try {
+        await fetch('http://127.0.0.1:8125/report', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(report) });
+        stg('done');
+      } catch (e) { console.log('BOUNCE report POST 失败: ' + e.message); }
     })();
   }
 
