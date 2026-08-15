@@ -70,9 +70,9 @@ const TANK_TYPES = {
   },
   ru: {
     name: '俄军 T90M', maxSpeed: 205, back: 0.35, reload: 6,
-    era: 450,
+    era: 500,                                       // 爆反血量（俄军比美军多 200：300+200）
     armor: { front: 800, side: 150, back: 700 },
-    armorEra: { front: 1200, side: 500, back: 700 },
+    armorEra: { front: 1200, side: 950, back: 700 },  // 爆反侧面额外防护 +800（150→950）
     pen: 750, penDrop: 200,
     ammoZone: 'side',   // 弹药架位于侧面中心
     hasLoader: true,    // 自动装弹机：损坏后装填时间翻倍
@@ -338,6 +338,7 @@ function spawnPlayer(room, p, seat) {
   p.reloadT = 0;
   p.parts = { track: true, turret: true, engine: true, ammo: true, optics: true, loader: true };
   p.repairT = 0;
+  p.eraHit = false; // 本回合是否已被命中（爆反首击大扣减判定）
   p.fireT = 0;
   p.fireDmg = 0;
   p.era = initialEra(p.type);         // 反应装甲按型号重置
@@ -633,7 +634,10 @@ function sim(room, dt, now) {
               room.pendingEvents.push({ k: 'boom', x: Math.round(t2.x), y: Math.round(t2.y) });
             } else {
               // 爆反血条：任何命中先扣 伤害/2（至少 1），扣完失效、装甲回基础值
-              const eraCost = Math.max(1, Math.round(dmg / 2));
+              // 爆反血条：本回合首次被命中扣 40-70 随机，之后每次扣 20-40 随机
+              const eraFirstHit = !q.eraHit; // 本回合是否首次被命中
+              q.eraHit = true;
+              const eraCost = eraFirstHit ? (40 + Math.floor(Math.random() * 31)) : (20 + Math.floor(Math.random() * 21));
               if (q.era > 0) q.era = Math.max(0, q.era - eraCost);
               // 装甲厚度判定：爆反生效时正面/侧面增强（背面不变）
               const armor = (q.era > 0 ? tt.armorEra : tt.armor)[zone];
