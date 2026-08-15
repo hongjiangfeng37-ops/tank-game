@@ -93,7 +93,7 @@
     repairBar: $('repairBar'), damageNote: $('damageNote'),
     deathOverlay: $('deathOverlay'), deathText: $('deathText'),
     scoreboard: $('scoreboard'), sbRows: $('sbRows'),
-    menu: $('menu'), nameInput: $('nameInput'), btnCreate: $('btnCreate'),
+    menu: $('menu'), nameInput: $('nameInput'), btnCreate: $('btnCreate'), btnSolo: $('btnSolo'),
     joinInput: $('joinInput'), btnJoin: $('btnJoin'), errMsg: $('errMsg'),
     btnRefresh: $('btnRefresh'), roomList: $('roomList'),
     lobby: $('lobby'), lobbyCode: $('lobbyCode'), lobbyLink: $('lobbyLink'),
@@ -237,9 +237,9 @@
     opts = opts || {};
     browse = !!opts.browse;
     joined = false;
-    intent = browse ? { join: false, room: null } : { join: true, room: room || null };
+    intent = browse ? { join: false, room: null } : { join: true, room: room || null, solo: !!opts.solo };
     // 快照本连接的意图：连接生命周期内不受后续 joinRoom/浏览重连影响（修复竞态导致 join 丢失）
-    const myIntent = { join: intent.join, room: intent.room };
+    const myIntent = { join: intent.join, room: intent.room, solo: intent.solo };
     intentionalClose = false;
     if (!browse) { // 浏览模式(房间列表扫描)是静默连接，不显示遮罩
       show(els.connOverlay, true);
@@ -252,10 +252,10 @@
     ws = conn;
     lastPongAt = performance.now();
     conn.onopen = () => {
-      if (myIntent.join) conn.send(JSON.stringify({ t: 'join', name: myName, room: myIntent.room, resume: myId }));
+      if (myIntent.join) conn.send(JSON.stringify({ t: 'join', name: myName, room: myIntent.room, resume: myId, solo: !!myIntent.solo }));
       else if (conn.__pendingJoin !== undefined) {
         // 连接建立期间玩家已点击加入：按待加入发送
-        conn.send(JSON.stringify({ t: 'join', name: myName, room: conn.__pendingJoin, resume: myId }));
+        conn.send(JSON.stringify({ t: 'join', name: myName, room: conn.__pendingJoin, resume: myId, solo: !!conn.__pendingSolo }));
       } else { conn.send(JSON.stringify({ t: 'list' })); startBrowse(); }
     };
     conn.onmessage = (ev) => {
@@ -1352,7 +1352,7 @@
     myName = els.nameInput.value.trim().slice(0, 12);
     localStorage.setItem('tk_name', myName);
   });
-  function joinRoom(room) {
+  function joinRoom(room, solo) {
     myName = els.nameInput.value.trim().slice(0, 12) || ('玩家' + Math.floor(100 + Math.random() * 900));
     localStorage.setItem('tk_name', myName);
     els.errMsg.textContent = '';
@@ -1360,21 +1360,23 @@
       if (!joined) {
         // 从浏览连接转为加入意图：发送 join，并确保断线后按加入重连
         if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; } // 清掉浏览重连定时器，避免竞态
-        intent = { join: true, room: room || null };
+        intent = { join: true, room: room || null, solo: !!solo };
         browse = false;
         stopBrowse();
-        ws.send(JSON.stringify({ t: 'join', name: myName, room: room || null, resume: myId }));
+        ws.send(JSON.stringify({ t: 'join', name: myName, room: room || null, resume: myId, solo: !!solo }));
       }
     } else if (ws && ws.readyState === 0) {
       // 连接建立中：把加入请求挂到连接上，onopen 时发送（避免浏览重连竞态覆盖意图）
       if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-      intent = { join: true, room: room || null };
+      intent = { join: true, room: room || null, solo: !!solo };
       ws.__pendingJoin = room || null;
+      ws.__pendingSolo = !!solo;
     } else {
-      connect(room);
+      connect(room, { solo });
     }
   }
   els.btnCreate.addEventListener('click', () => joinRoom(null));
+  els.btnSolo.addEventListener('click', () => joinRoom(null, true));
   els.btnJoin.addEventListener('click', () => {
     const code = els.joinInput.value.trim().toUpperCase();
     if (!code) { els.errMsg.textContent = '请输入房间号'; return; }
