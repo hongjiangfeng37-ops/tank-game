@@ -57,21 +57,28 @@ const SPAWNS = [
 ];
 const TANK = { r: 22, l: 52, w: 44, accel: 340, turn: 3.2, dragF: 0.9, dragL: 3.8, hp: 100, boostMult: 1.3 };
 // 坦克类型（玩家开局选择）
+// 装甲厚度：armor 基础 / armorEra 爆反生效时；穿深：pen 初始，每次反弹扣 penDrop，扣完消失
 const TANK_TYPES = {
   us: {
-    name: '美军 M1A2', maxSpeed: 270, back: 0.8, reload: 4, era: 2,
-    pen: { front: 0.65, side: 0.85, back: 0.95 },  // 击穿概率
+    name: '美军 M1A2', maxSpeed: 270, back: 0.8, reload: 4,
+    era: 300,                                        // 爆反血量（命中伤害/2 扣除，扣完失效）
+    armor: { front: 600, side: 200, back: 400 },     // 基础装甲
+    armorEra: { front: 900, side: 800, back: 400 },  // 爆反生效时装甲（背面不变）
+    pen: 800, penDrop: 100,                          // 初始穿深 / 每次反弹衰减
     ammoZone: 'rear',   // 弹药架位于炮塔后方
     hasLoader: false,
   },
   ru: {
-    name: '俄军 T90M', maxSpeed: 205, back: 0.35, reload: 6, era: 3,
-    pen: { front: 0.3, side: 0.65, back: 0.85 },   // 正面极难击穿
+    name: '俄军 T90M', maxSpeed: 205, back: 0.35, reload: 6,
+    era: 450,
+    armor: { front: 800, side: 150, back: 700 },
+    armorEra: { front: 1200, side: 500, back: 700 },
+    pen: 750, penDrop: 200,
     ammoZone: 'side',   // 弹药架位于侧面中心
     hasLoader: true,    // 自动装弹机：损坏后装填时间翻倍
   },
 };
-const BULLET = { speed: 620, r: 5, dmg: 30, bounces: 5, life: 5.5, cooldown: 0.35, rapidCd: 0.14 };
+const BULLET = { speed: 620, r: 5, dmg: 30, life: 5.5, cooldown: 0.35, rapidCd: 0.14 };
 const MAG_SIZE = 1;        // 弹匣容量（单发装填）
 const PARTS_LIST = ['track', 'turret', 'engine', 'ammo', 'optics', 'loader']; // 可损坏部件（loader 仅俄军）
 const FRONT_PARTS = ['track', 'turret', 'engine', 'optics'];         // 正面命中不会直接坏弹药架
@@ -80,6 +87,13 @@ const FIRE_TIME = 3;       // 起火持续秒数
 const FIRE_DPS = 5;        // 起火每秒伤害
 const POWERUP = { max: 4, spawnEvery: 6, life: 20, r: 15 };
 const ROOM_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+// 初始爆反血量（TK_ERA_SCALE 测试钩子：缩小血量以便快速验证爆反失效后的判定）
+function initialEra(type) {
+  const base = TANK_TYPES[type].era;
+  const scale = Number(process.env.TK_ERA_SCALE);
+  return Number.isFinite(scale) && scale > 0 ? Math.max(1, Math.round(base * scale)) : base;
+}
 
 // 生成当前回合的地图（测试模式用固定布局，生产每回合随机迷宫）
 function roomMap() {
@@ -326,7 +340,7 @@ function spawnPlayer(room, p, seat) {
   p.repairT = 0;
   p.fireT = 0;
   p.fireDmg = 0;
-  p.era = TANK_TYPES[p.type].era;         // 反应装甲按型号重置
+  p.era = initialEra(p.type);         // 反应装甲按型号重置
 }
 
 function startRound(room) {
@@ -490,7 +504,7 @@ function sim(room, dt, now) {
           room.bullets.push({
             x: mx, y: my,
             vx: Math.cos(ang) * BULLET.speed, vy: Math.sin(ang) * BULLET.speed,
-            ownerId: p.id, bounces: BULLET.bounces, life: BULLET.life,
+            ownerId: p.id, pen: tt.pen, life: BULLET.life,
           });
         };
         if (triple) { fire(tk.ta - 0.18); fire(tk.ta); fire(tk.ta + 0.18); }
@@ -530,13 +544,16 @@ function sim(room, dt, now) {
     b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
     let dead = b.life <= 0;
 
-    // 边界反弹
-    if (!dead && b.x < WALL_T + BULLET.r) { b.x = WALL_T + BULLET.r; b.vx = -b.vx; if (--b.bounces < 0) dead = true; }
-    if (!dead && b.x > WORLD.w - WALL_T - BULLET.r) { b.x = WORLD.w - WALL_T - BULLET.r; b.vx = -b.vx; if (--b.bounces < 0) dead = true; }
-    if (!dead && b.y < WALL_T + BULLET.r) { b.y = WALL_T + BULLET.r; b.vy = -b.vy; if (--b.bounces < 0) dead = true; }
-    if (!dead && b.y > WORLD.h - WALL_T - BULLET.r) { b.y = WORLD.h - WALL_T - BULLET.r; b.vy = -b.vy; if (--b.bounces < 0) dead = true; }
+    // 反弹消耗穿深（按射手型号），穿深扣完子弹消失
+    const penDrop = (() => { const s = room.players.get(b.ownerId); return s ? TANK_TYPES[s.type].penDrop : 100; })();
 
-    // 障碍碰撞：线段检测（防高速隧穿穿墙），仅在真正撞击表面时反弹并消耗次数
+    // 边界反弹
+    if (!dead && b.x < WALL_T + BULLET.r) { b.x = WALL_T + BULLET.r; b.vx = -b.vx; b.pen -= penDrop; if (b.pen <= 0) dead = true; }
+    if (!dead && b.x > WORLD.w - WALL_T - BULLET.r) { b.x = WORLD.w - WALL_T - BULLET.r; b.vx = -b.vx; b.pen -= penDrop; if (b.pen <= 0) dead = true; }
+    if (!dead && b.y < WALL_T + BULLET.r) { b.y = WALL_T + BULLET.r; b.vy = -b.vy; b.pen -= penDrop; if (b.pen <= 0) dead = true; }
+    if (!dead && b.y > WORLD.h - WALL_T - BULLET.r) { b.y = WORLD.h - WALL_T - BULLET.r; b.vy = -b.vy; b.pen -= penDrop; if (b.pen <= 0) dead = true; }
+
+    // 障碍碰撞：线段检测（防高速隧穿穿墙），仅在真正撞击表面时反弹并消耗穿深
     if (!dead) {
       for (const o of room.obstacles) {
         const hit = segRectHit(px, py, b.x, b.y, o);
@@ -546,7 +563,8 @@ function sim(room, dt, now) {
           if (vn < 0) {
             b.vx -= 2 * vn * hit.nx;
             b.vy -= 2 * vn * hit.ny;
-            if (--b.bounces < 0) dead = true;
+            b.pen -= penDrop;
+            if (b.pen <= 0) dead = true;
           }
           break;
         }
@@ -567,20 +585,21 @@ function sim(room, dt, now) {
           const vn = b.vx * nx + b.vy * ny;
           if (vn < 0) {
             b.vx -= 2 * vn * nx; b.vy -= 2 * vn * ny;
-            if (--b.bounces < 0) dead = true;
+            b.pen -= penDrop;
+            if (b.pen <= 0) dead = true;
           }
           break;
         }
       }
     }
 
-    // 命中坦克（模块化损伤：旋转矩形碰撞与贴图轮廓吻合 / 弹药架弱点区域 / 击穿判定 / 反应装甲）
+    // 命中坦克（模块化损伤：旋转矩形碰撞与贴图轮廓吻合 / 弹药架弱点区域 / 装甲厚度×炮弹穿深判定 / 爆反血条）
     if (!dead) {
       for (const q of alive) {
         if (q.id === b.ownerId) continue;
         const t2 = q.tank;
-        const dx = t2.x - b.x, dy = t2.y - b.y;
-        // 命中点局部坐标：+x 坦克前方，|y| 横向（旋转矩形判定，贴合车体 52x44 贴图轮廓）
+        // 命中点局部坐标：+x = 坦克车头方向（子弹相对坦克，符号与车头朝向一致）
+        const dx = b.x - t2.x, dy = b.y - t2.y;
         const fwdX = Math.cos(t2.a), fwdY = Math.sin(t2.a);
         const rx = dx * fwdX + dy * fwdY;
         const ry = -dx * fwdY + dy * fwdX;
@@ -609,54 +628,29 @@ function sim(room, dt, now) {
               }
               room.pendingEvents.push({ k: 'boom', x: Math.round(t2.x), y: Math.round(t2.y) });
             } else {
-              // 击穿判定（按型号与部位；反应装甲存在时更难穿透）
-              let pen = tt.pen[zone];
-              if (q.era > 0) pen *= 0.55;
-              const penetrated = Math.random() < pen;
-              if (!penetrated) {
-                // 未击穿：反应装甲吸收（或少量跳弹伤害），不掉模块
-                const eraLeft = q.era > 0 ? q.era : 0;
-                if (q.era > 0) q.era--;
-                t2.hp -= Math.max(3, dmg * 0.15);
-                room.pendingEvents.push({ k: 'hit', id: q.id, zone, parts: [], pen: false, era: q.era, x: Math.round(b.x), y: Math.round(b.y) });
-                if (eraLeft === 0 && t2.hp <= 0) {
-                  q.alive = false;
-                  q.deadAt = now;
-                  const killer = room.players.get(b.ownerId);
-                  if (killer && killer.id !== q.id) {
-                    killer.kills++;
-                    room.pendingEvents.push({ k: 'kill', killer: killer.name, victim: q.name, reason: '车组阵亡', x: Math.round(t2.x), y: Math.round(t2.y) });
-                  }
-                  room.pendingEvents.push({ k: 'boom', x: Math.round(t2.x), y: Math.round(t2.y) });
-                }
-              } else {
-                // 击穿：全伤害 + 反应装甲消耗 + 区域模块损坏
+              // 爆反血条：任何命中先扣 伤害/2（至少 1），扣完失效、装甲回基础值
+              const eraCost = Math.max(1, Math.round(dmg / 2));
+              if (q.era > 0) q.era = Math.max(0, q.era - eraCost);
+              // 装甲厚度判定：爆反生效时正面/侧面增强（背面不变）
+              const armor = (q.era > 0 ? tt.armorEra : tt.armor)[zone];
+              const ratio = b.pen / armor;
+              const brokenParts = [];
+              const breakOne = (pool) => {
+                const avail = pool.filter((n) => q.parts[n]);
+                if (!avail.length) return;
+                const pick = avail[rnd(avail.length)];
+                q.parts[pick] = false;
+                brokenParts.push(pick);
+              };
+              if (ratio >= 1.0) {
+                // 完全击穿：全伤害 + 随机其他部位模块 + 起火/殉爆概率
                 t2.hp -= dmg;
                 q.lastHitBy = b.ownerId;
-                if (q.era > 0) q.era--;
-                const brokenParts = [];
-                const breakOne = (pool) => {
-                  const avail = pool.filter((n) => q.parts[n]);
-                  if (!avail.length) return;
+                const avail = PARTS_LIST.filter((n) => q.parts[n]);
+                if (avail.length) {
                   const pick = avail[rnd(avail.length)];
                   q.parts[pick] = false;
                   brokenParts.push(pick);
-                };
-                // 区域模块损坏：发动机固定后方；正面按型号差异
-                if (zone === 'front') {
-                  if (q.type === 'ru') {
-                    // 俄军正面：只可能坏履带或装弹机
-                    breakOne(['track', 'loader']);
-                  } else {
-                    // 美军正面：炮塔优先，履带其次
-                    if (Math.random() < 0.7) breakOne(['turret']);
-                    else breakOne(['track']);
-                  }
-                } else if (zone === 'back') {
-                  breakOne(['engine']); // 发动机固定位于后方
-                } else {
-                  breakOne(['track']);
-                  if (q.type === 'ru') breakOne(['loader']);
                 }
                 // 观瞄随机附加损坏
                 if (q.parts.optics && Math.random() < 0.15) { q.parts.optics = false; brokenParts.push('optics'); }
@@ -691,6 +685,33 @@ function sim(room, dt, now) {
                     room.pendingEvents.push({ k: 'boom', x: Math.round(t2.x), y: Math.round(t2.y) });
                   }
                 }
+              } else if (ratio >= 0.9) {
+                // 未击穿但穿透压力极大：损坏命中部位对应模块，不致死
+                if (zone === 'front') {
+                  if (q.type === 'ru') {
+                    // 俄军正面：只可能坏履带或装弹机
+                    breakOne(['track', 'loader']);
+                  } else {
+                    // 美军正面：炮塔优先，履带其次
+                    if (Math.random() < 0.7) breakOne(['turret']);
+                    else breakOne(['track']);
+                  }
+                } else if (zone === 'back') {
+                  // 背面：起火 或 发动机损坏（通用）
+                  if (Math.random() < 0.5) {
+                    q.fireT = FIRE_TIME;
+                    q.fireDmg = 0;
+                    room.pendingEvents.push({ k: 'fire', id: q.id, x: Math.round(t2.x), y: Math.round(t2.y) });
+                  } else {
+                    breakOne(['engine']);
+                  }
+                } else {
+                  breakOne(['track']); // 侧面装甲薄基本必穿，此处不特别设定
+                }
+                room.pendingEvents.push({ k: 'hit', id: q.id, zone, parts: brokenParts, pen: false, era: q.era, x: Math.round(b.x), y: Math.round(b.y) });
+              } else {
+                // 未击穿（跳弹）：仅消耗爆反，无伤害无模块
+                room.pendingEvents.push({ k: 'hit', id: q.id, zone, parts: [], pen: false, era: q.era, x: Math.round(b.x), y: Math.round(b.y) });
               }
             }
           }
@@ -924,6 +945,7 @@ function broadcast(room) {
       x: Math.round(b.x), y: Math.round(b.y),
       vx: Math.round(b.vx), vy: Math.round(b.vy),
       o: b.ownerId,
+      pen: Math.round(b.pen),
     })),
     pups: room.pups.map((pu) => ({ x: Math.round(pu.x), y: Math.round(pu.y), type: pu.type, life: Math.round(pu.life) })),
     events: room.pendingEvents.splice(0),
@@ -1002,7 +1024,7 @@ function onMessage(conn, buf) {
       if (!p || !p.room || p.room.phase !== 'lobby') break;
       if (msg.type === 'us' || msg.type === 'ru') {
         p.type = msg.type;
-        p.era = TANK_TYPES[msg.type].era;
+        p.era = initialEra(msg.type);
         broadcastRoom(p.room);
       }
       break;
