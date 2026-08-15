@@ -607,6 +607,7 @@ function sim(room, dt, now) {
             x: mx, y: my,
             vx: Math.cos(ang) * BULLET.speed, vy: Math.sin(ang) * BULLET.speed,
             ownerId: p.id, pen: tt.pen, life: BULLET.life,
+            spawnT: now, // 出生保护：刚出膛 200ms 内不判定命中自己（防斜射时炮口投影落入命中框吞炮弹）
           });
         };
         if (triple) { fire(tk.ta - 0.18); fire(tk.ta); fire(tk.ta + 0.18); }
@@ -702,7 +703,9 @@ function sim(room, dt, now) {
     // 命中坦克（模块化损伤：旋转矩形碰撞与贴图轮廓吻合 / 弹药架弱点区域 / 装甲厚度×炮弹穿深判定 / 爆反血条）
     if (!dead) {
       for (const q of alive) {
-        // 允许命中自己：反弹回来的炮弹同样造成伤害（炮口 48 > 命中框半长 47，正常开火不会立即自伤）
+        // 允许命中自己：反弹回来的炮弹同样造成伤害（炮口 34 > 命中框半长 31，正对开火不会立即自伤）
+        // 出生保护：出膛 200ms 内不判定命中发射者自己（斜射时炮口投影会落入命中框，否则斜射吞炮弹+自伤）
+        if (q.id === b.ownerId && now - (b.spawnT || 0) < 0.2) continue;
         const t2 = q.tank;
         // 命中点局部坐标：+x = 坦克车头方向（子弹相对坦克，符号与车头朝向一致）
         const dx = b.x - t2.x, dy = b.y - t2.y;
