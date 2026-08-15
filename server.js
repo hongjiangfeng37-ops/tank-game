@@ -757,18 +757,17 @@ function sim(room, dt, now) {
                 q.parts[pick] = false;
                 brokenParts.push(pick);
               };
-              // 美军机制：爆反不满血时，正面被击中（任何结果）50% 坏炮塔
-              if (q.type === 'us' && zone === 'front' && q.era < tt.era && q.parts.turret && Math.random() < 0.5) {
-                q.parts.turret = false;
-                brokenParts.push('turret');
-              }
               if (ratio >= 1.0) {
                 // 完全击穿：全伤害 + 随机其他部位模块 + 起火/殉爆概率
                 t2.hp -= dmg;
                 q.lastHitBy = b.ownerId;
-                // 随机损坏一个模块（美军无装弹机，排除 loader；美军侧面击穿 40% 优先坏炮塔）
+                // 随机损坏一个模块（美军无装弹机，排除 loader；模块损坏只在击穿时发生，跳弹一律不坏）
                 let avail = PARTS_LIST.filter((n) => q.parts[n] && (q.type === 'ru' || n !== 'loader'));
-                if (q.type === 'us' && zone === 'side' && q.parts.turret && Math.random() < 0.4) {
+                // 美军机制：爆反不满血时，正面击穿 15% 坏炮塔（并入击穿判定，未击穿不坏炮塔）
+                if (q.type === 'us' && zone === 'front' && q.era < tt.era && q.parts.turret && Math.random() < 0.15) {
+                  q.parts.turret = false;
+                  brokenParts.push('turret');
+                } else if (q.type === 'us' && zone === 'side' && q.parts.turret && Math.random() < 0.4) {
                   // 美军侧面击穿：40% 优先坏炮塔（侧面不再只坏无关紧要的模块）
                   q.parts.turret = false;
                   brokenParts.push('turret');
@@ -818,7 +817,7 @@ function sim(room, dt, now) {
                     // 俄军正面：只可能坏履带或装弹机
                     breakOne(['track', 'loader']);
                   } else {
-                    // 美军正面：炮塔损坏由统一机制（爆反不满血 50%）处理，未触发则只坏履带
+                    // 美军正面：未击穿只坏履带（炮塔损坏只在击穿时判定，未击穿不坏炮塔）
                     breakOne(['track']);
                   }
                 } else if (zone === 'back') {
