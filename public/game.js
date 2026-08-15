@@ -869,17 +869,13 @@
     drawFog();
   }
 
-  // 战争迷雾：车头方向主视野 + 炮口方向扩展视野 + 自身周围；完全不透明
-  // 实现：离屏黑底蒙版 → 擦出可视区（透明）→ 覆盖到主画布（黑=迷雾，透明=场景）
+  // 观瞄失效迷雾：平时无迷雾；观瞄设备损坏后进入全黑状态，仅坦克周围留一点光
+  // 实现：离屏黑底蒙版 → 擦出自身周围可视圈（透明）→ 覆盖到主画布
   function drawFog() {
     if (phase !== 'play' || !pred || !selfAlive) return;
+    if (selfParts.optics) return;      // 观瞄正常：不画迷雾
     const vx = pred.x, vy = pred.y;
-    const opticsOk = selfParts.optics;
-    const selfR = opticsOk ? 120 : 70;   // 自身周围可视圈（观瞄损坏时极小）
-    const rMain = opticsOk ? 460 : 0;    // 车头主视野半径
-    const mainAng = Math.PI / 4;         // 车头主视野半角（90°）
-    const rTur = opticsOk ? 300 : 0;     // 炮口扩展视野半径
-    const turAng = Math.PI / 5;          // 炮口扩展视野半角（72°）
+    const selfR = 70;                  // 观瞄损坏：坦克周围留一点光
     const dprF = Math.min(window.devicePixelRatio || 1, 2);
     const vwF = canvas.clientWidth, vhF = canvas.clientHeight;
     // 1) 蒙版：全屏黑底（设备像素）
@@ -891,8 +887,7 @@
     fogCtx.globalCompositeOperation = 'source-over';
     fogCtx.fillStyle = '#000';
     fogCtx.fillRect(0, 0, fogCanvas.width, fogCanvas.height);
-    // 2) 擦除可视区（自身圈 + 车头扇形 + 炮口扇形）→ 透明
-    //    变换与主画布相机一致（世界 → 设备像素）
+    // 2) 擦除自身周围可视圈 → 透明（变换与主画布相机一致：世界 → 设备像素）
     fogCtx.save();
     fogCtx.translate(vwF / 2 * dprF, vhF / 2 * dprF);
     fogCtx.scale(cam.s, cam.s);
@@ -901,17 +896,6 @@
     fogCtx.fillStyle = '#fff';
     fogCtx.beginPath();
     fogCtx.arc(vx, vy, selfR, 0, Math.PI * 2);
-    if (rMain) {
-      fogCtx.moveTo(vx, vy);
-      fogCtx.arc(vx, vy, rMain, pred.a - mainAng, pred.a + mainAng);
-      fogCtx.closePath();
-    }
-    if (rTur) {
-      const ta = autoTurret ? pred.a : mouseAngle;
-      fogCtx.moveTo(vx, vy);
-      fogCtx.arc(vx, vy, rTur, ta - turAng, ta + turAng);
-      fogCtx.closePath();
-    }
     fogCtx.fill();
     fogCtx.restore();
     // 3) 蒙版覆盖到主画布（黑区盖住场景=迷雾，透明区露出场景）
