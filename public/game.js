@@ -35,7 +35,7 @@
   const PALETTE = ['#ff5d5d', '#4fc3f7', '#66bb6a', '#ffee58', '#ff8a65', '#ba68c8', '#4dd0e1', '#f06292', '#aed581', '#90a4ae'];
   const PUP_COLOR = { health: '#4caf50', shield: '#4dd0e1', rapid: '#ffca28', triple: '#ff7043' };
   const PUP_ICON = { health: '回血', shield: '护盾', rapid: '速射', triple: '三连' };
-  const INTERP_MS = 30; // 快照插值延迟（60Hz 快照下 30ms 足够平滑，进一步降低感知延迟）
+  const INTERP_MS = 20; // 快照插值延迟（60Hz 快照下 20ms 足够平滑，更低感知延迟）
 
   // ---------------- DOM ----------------
   const canvas = $('game');
@@ -128,6 +128,7 @@
   const keys = {};
   const mouse = { x: 0, y: 0, down: false, active: false };
   let mouseAngle = 0;
+  let autoTurret = true; // 无瞄准输入时炮塔自动对齐车体（开局炮管朝车头，防止"倒着走"观感）
   let lastInputSent = 0;
   let lastPingSent = 0;
   let hudTimer = 0;
@@ -531,7 +532,7 @@
   window.addEventListener('pointerup', (e) => { if (e.pointerType !== 'touch') mouse.down = false; });
   window.addEventListener('pointermove', (e) => {
     if (e.pointerType === 'touch') return;
-    if (e.target === canvas) { mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true; }
+    if (e.target === canvas) { mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true; autoTurret = false; }
   });
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   document.addEventListener('touchstart', (e) => {
@@ -623,7 +624,7 @@
     const right = keys.KeyD || keys.ArrowRight;
     let thr = (up ? 1 : 0) - (down ? 1 : 0);
     let steer = (right ? 1 : 0) - (left ? 1 : 0);
-    let ta = mouseAngle;
+    let ta = autoTurret ? (pred ? pred.a : mouseAngle) : mouseAngle;
     let shoot = mouse.down || keys.Space;
     let boost = !!(keys.ShiftLeft || keys.ShiftRight);
     if (touch.mode) {
@@ -632,7 +633,7 @@
       steer = clamp(steer + ((dpad.right ? 1 : 0) - (dpad.left ? 1 : 0)), -1, 1);
       if (touch.aim) {
         const len = Math.hypot(touch.aim.dx, touch.aim.dy);
-        if (len > 8) ta = Math.atan2(touch.aim.dy, touch.aim.dx);
+        if (len > 8) { ta = Math.atan2(touch.aim.dy, touch.aim.dx); autoTurret = false; }
         shoot = true; // 按住右摇杆即开火
       }
       if (touch.boost) boost = true;
@@ -677,7 +678,7 @@
     tk.x += tk.vx * dt;
     tk.y += tk.vy * dt;
     tk.a += inp.steer * TANK.turn * dt;
-    tk.ta = mouseAngle;
+    tk.ta = autoTurret ? tk.a : mouseAngle;
     collideTankWorld(tk);
   }
   function collideTankWorld(tk) {
@@ -1473,7 +1474,7 @@
       localReload = reload;
       // 本地子弹预测：立即显示自己发射的子弹（不等服务器往返）
       if (pred) {
-        const ta = mouseAngle;
+        const ta = autoTurret ? pred.a : mouseAngle;
         const spd = 620;
         predBullets.push({
           x: pred.x + Math.cos(ta) * 34, y: pred.y + Math.sin(ta) * 34,
@@ -1529,6 +1530,7 @@
 
     // 鼠标世界角度
     if (mouse.active) {
+      autoTurret = false;
       const wx = cam.x + (mouse.x - canvas.clientWidth / 2) / cam.s;
       const wy = cam.y + (mouse.y - canvas.clientHeight / 2) / cam.s;
       mouseAngle = Math.atan2(wy - (pred ? pred.y : cam.y), wx - (pred ? pred.x : cam.x));
@@ -1550,7 +1552,7 @@
       if (!src || src.x == null || !src.alive) { p.render = null; continue; }
       seen.add(p.id);
       if (p.id === myId && selfPos) {
-        p.render = { x: selfPos.x, y: selfPos.y, a: selfPos.a, ta: mouseAngle, hp: selfHp, shd: selfBuffs.shd, ty: selfType, prt: [selfParts.track, selfParts.turret, selfParts.engine, selfParts.ammo, selfParts.optics, selfParts.loader], fr: selfFire };
+        p.render = { x: selfPos.x, y: selfPos.y, a: selfPos.a, ta: autoTurret ? selfPos.a : mouseAngle, hp: selfHp, shd: selfBuffs.shd, ty: selfType, prt: [selfParts.track, selfParts.turret, selfParts.engine, selfParts.ammo, selfParts.optics, selfParts.loader], fr: selfFire };
       } else {
         const from = pa || src;
         const to = pb || src;
@@ -1626,6 +1628,89 @@
     lastNow = now;
     update(now, dt);
     requestAnimationFrame(loop);
+  }
+
+  // ---------------- 朝向自动测试模式（?facing=1，仅供自动化验证渲染朝向） ----------------
+  if (new URLSearchParams(location.search).has('facing')) {
+    const sleepF = (ms) => new Promise((r) => setTimeout(r, ms));
+    (async () => {
+      const reportStage = (s) => {
+        try { fetch('http://127.0.0.1:8125/report', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stage: s }) }); } catch (e) { /* ignore */ }
+      };
+      try {
+        const report = { redN: 0, redLx: 0, yellowN: 0, yellowLx: 0, deckF: 0, deckB: 0, a: 0, ta: 0, x: 0, y: 0, vw: 0, vh: 0, dpr: 1, camS: 0, phase: '', ty: '', err: '' };
+        reportStage('boot');
+        // 等待菜单就绪
+        for (let i = 0; i < 100 && !window.__gameBooted; i++) await sleepF(100);
+        reportStage('menu');
+        const els2 = { name: document.getElementById('nameInput'), create: document.getElementById('btnCreate'), start: document.getElementById('btnStart'), lobby: document.getElementById('lobby') };
+        els2.name.value = '朝向测试';
+        els2.create.click();
+        for (let i = 0; i < 80 && els2.lobby.classList.contains('hidden'); i++) await sleepF(100);
+        reportStage('lobby');
+        els2.start.click();
+        // 等待进入战斗
+        for (let i = 0; i < 200 && (phase !== 'play' || !pred); i++) await sleepF(100);
+        reportStage('play:' + phase + ' pred=' + (pred ? 1 : 0));
+        await sleepF(2500); // 相机/插值稳定
+        // 按 W 直走 1.5 秒
+        keys.KeyW = true;
+        await sleepF(1500);
+        keys.KeyW = false;
+        await sleepF(400);
+        // 采样像素：整屏 ImageData
+        const dpr2 = Math.min(window.devicePixelRatio || 1, 2);
+        const vw2 = canvas.clientWidth, vh2 = canvas.clientHeight;
+        const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const ca = Math.cos(pred.a), sa = Math.sin(pred.a);
+        let redN = 0, redSx = 0, yellowN = 0, yellowSx = 0, deckF = 0, deckB = 0;
+        for (let ly = -22; ly <= 22; ly += 1) {
+          for (let lx = -26; lx <= 26; lx += 1) {
+            const d2 = lx * lx + ly * ly;
+            if (d2 < 64) continue; // 避开中央炮塔基座/色环
+            const wx = pred.x + lx * ca - ly * sa;
+            const wy = pred.y + lx * sa + ly * ca;
+            const sx = Math.round(((wx - cam.x) * cam.s + vw2 / 2) * dpr2);
+            const sy = Math.round(((wy - cam.y) * cam.s + vh2 / 2) * dpr2);
+            if (sx < 0 || sy < 0 || sx >= canvas.width || sy >= canvas.height) continue;
+            const o = (sy * canvas.width + sx) * 4;
+            const r = img.data[o], g = img.data[o + 1], b = img.data[o + 2];
+            if (Math.abs(r - 201) <= 35 && Math.abs(g - 106) <= 35 && Math.abs(b - 90) <= 35) { redN++; redSx += lx; }
+            else if (Math.abs(r - 216) <= 35 && Math.abs(g - 199) <= 35 && Math.abs(b - 122) <= 35) { yellowN++; yellowSx += lx; }
+            else if (lx > 8 && Math.abs(r - 141) <= 30 && Math.abs(g - 125) <= 30 && Math.abs(b - 82) <= 30) deckF++;
+            else if (lx < -8 && Math.abs(r - 141) <= 30 && Math.abs(g - 125) <= 30 && Math.abs(b - 82) <= 30) deckB++;
+          }
+        }
+        // 打印红块预期位置的实际颜色（调试）
+        const debugCols = [];
+        for (const [dlx, dly] of [[23.9, 3.1], [23.9, -3.1], [24.4, 4.2], [-23.9, 3.1]]) {
+          const dwx = pred.x + dlx * ca - dly * sa;
+          const dwy = pred.y + dlx * sa + dly * ca;
+          const dsx = Math.round(((dwx - cam.x) * cam.s + vw2 / 2) * dpr2);
+          const dsy = Math.round(((dwy - cam.y) * cam.s + vh2 / 2) * dpr2);
+          if (dsx >= 0 && dsy >= 0 && dsx < canvas.width && dsy < canvas.height) {
+            const o = (dsy * canvas.width + dsx) * 4;
+            debugCols.push([dlx, dly, img.data[o], img.data[o + 1], img.data[o + 2]]);
+          }
+        }
+        report.debugCols = debugCols;
+        report.redN = redN; report.redLx = redN ? +(redSx / redN).toFixed(1) : 0;
+        report.yellowN = yellowN; report.yellowLx = yellowN ? +(yellowSx / yellowN).toFixed(1) : 0;
+        report.deckF = deckF; report.deckB = deckB;
+        report.a = +pred.a.toFixed(3); report.ta = +pred.ta.toFixed(3);
+        report.x = Math.round(pred.x); report.y = Math.round(pred.y);
+        report.vw = vw2; report.vh = vh2; report.dpr = dpr2; report.camS = +cam.s.toFixed(3);
+        report.phase = phase; report.ty = selfType || '';
+        report.shot = canvas.toDataURL('image/png').split(',')[1];
+        try {
+          await fetch('http://127.0.0.1:8125/report', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(report) });
+          reportStage('done');
+        } catch (e) { console.log('FACING report POST 失败: ' + e.message); }
+      } catch (e) {
+        reportStage('error:' + e.message);
+        console.log('FACING 异常: ' + e.message);
+      }
+    })();
   }
 
   // ---------------- 启动 ----------------
