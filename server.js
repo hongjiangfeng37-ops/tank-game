@@ -35,7 +35,7 @@ const MAX_MSG = 1 << 20;       // 单条消息上限 1MB
 const WORLD = { w: 1600, h: 1200 };
 const WALL_T = 24; // 墙厚（碰撞边界在墙内缘）
 // 迷宫参数：每回合随机生成新迷宫（DFS 完美迷宫，通道全部连通）
-const MAZE_COLS = 10, MAZE_ROWS = 8;
+const MAZE_COLS = 8, MAZE_ROWS = 6;  // 迷宫格子少而大：通道 ~180px，适配真实比例长坦克
 const MAZE_WALL = 20; // 迷宫隔墙厚度
 // 固定地图（测试模式 TK_FIXED_MAP=1 使用，生产环境每回合随机迷宫）
 const DEFAULT_OBSTACLES = [
@@ -55,7 +55,8 @@ const SPAWNS = [
   { x: 110, y: 600, a: 0 },
   { x: 1490, y: 600, a: Math.PI },
 ];
-const TANK = { r: 22, l: 52, w: 44, accel: 340, turn: 3.2, dragF: 0.9, dragL: 3.8, hp: 100, boostMult: 1.3 };
+// 坦克尺寸（真实比例：长 84 宽 38，椭圆碰撞轴 rx/ry）
+const TANK = { rx: 42, ry: 19, l: 84, w: 38, accel: 340, turn: 3.2, dragF: 0.9, dragL: 3.8, hp: 100, boostMult: 1.3 };
 // 坦克类型（玩家开局选择）
 // 装甲厚度：armor 基础 / armorEra 爆反生效时；穿深：pen 初始，每次反弹扣 penDrop，扣完消失
 const TANK_TYPES = {
@@ -429,7 +430,7 @@ function startRound(room) {
   room.obstacles = roomMap();
   const usedCells = new Set();
   room.spawns = SPAWNS.map((s) => {
-    const f = fitSpawn(room.obstacles, s.x, s.y, TANK.r, WORLD.w, WORLD.h, WALL_T, usedCells);
+    const f = fitSpawn(room.obstacles, s.x, s.y, 24, WORLD.w, WORLD.h, WALL_T, usedCells);
     return { x: f.x, y: f.y, a: s.a };
   });
   // 广播新地图
@@ -451,22 +452,42 @@ function startRound(room) {
 
 // ---------------- 物理与战斗 ----------------
 function collideTankWorld(tk, obstacles) {
-  const minX = WALL_T + TANK.r, maxX = WORLD.w - WALL_T - TANK.r;
-  const minY = WALL_T + TANK.r, maxY = WORLD.h - WALL_T - TANK.r;
+  // 旋转椭圆的外接 AABB 半轴（碰撞随坦克朝向变化，方向正确）
+  const ca = Math.cos(tk.a), sa = Math.sin(tk.a);
+  const eRx = Math.abs(TANK.rx * ca) + Math.abs(TANK.ry * sa);
+  const eRy = Math.abs(TANK.rx * sa) + Math.abs(TANK.ry * ca);
+  // 世界墙
+  const minX = WALL_T + eRx, maxX = WORLD.w - WALL_T - eRx;
+  const minY = WALL_T + eRy, maxY = WORLD.h - WALL_T - eRy;
   if (tk.x < minX) { tk.x = minX; if (tk.vx < 0) tk.vx = -tk.vx * 0.3; }
   else if (tk.x > maxX) { tk.x = maxX; if (tk.vx > 0) tk.vx = -tk.vx * 0.3; }
   if (tk.y < minY) { tk.y = minY; if (tk.vy < 0) tk.vy = -tk.vy * 0.3; }
   else if (tk.y > maxY) { tk.y = maxY; if (tk.vy > 0) tk.vy = -tk.vy * 0.3; }
+  // 障碍：椭圆 vs AABB（缩放法）
   for (const o of obstacles) {
-    const cx = clamp(tk.x, o.x, o.x + o.w);
-    const cy = clamp(tk.y, o.y, o.y + o.h);
-    const dx = tk.x - cx, dy = tk.y - cy;
-    const d2 = dx * dx + dy * dy;
-    if (d2 < TANK.r * TANK.r) {
-      const d = Math.sqrt(d2) || 0.001;
-      const nx = dx / d, ny = dy / d;
-      tk.x = cx + nx * TANK.r;
-      tk.y = cy + ny * TANK.r;
+    const ox1 = (o.x - tk.x) / eRx, ox2 = (o.x + o.w - tk.x) / eRx;
+    const oy1 = (o.y - tk.y) / eRy, oy2 = (o.y + o.h - tk.y) / eRy;
+    const cxs = clamp(0, ox1, ox2), cys = clamp(0, oy1, oy2);
+    const d2 = cxs * cxs + cys * cys;
+    if (d2 < 1) {
+      const penX = cxs * eRx, penY = cys * eRy;
+      const penD = Math.hypot(penX, penY);
+      let nx, ny, R;
+      if (penD > 0.5) {
+        nx = penX / penD; ny = penY / penD;
+        R = 1 / Math.sqrt((nx * nx) / (eRx * eRx) + (ny * ny) / (eRy * eRy));
+        tk.x += nx * (R - penD);
+        tk.y += ny * (R - penD);
+      } else {
+        const dl = Math.abs(ox1), dr = Math.abs(ox2), dt2 = Math.abs(oy1), db = Math.abs(oy2);
+        const minD = Math.min(dl, dr, dt2, db);
+        if (minD === dl) { nx = -1; ny = 0; R = eRx; }
+        else if (minD === dr) { nx = 1; ny = 0; R = eRx; }
+        else if (minD === dt2) { nx = 0; ny = -1; R = eRy; }
+        else { nx = 0; ny = 1; R = eRy; }
+        tk.x += nx * (R - minD * (nx !== 0 ? eRx : eRy));
+        tk.y += ny * (R - minD * (ny !== 0 ? eRy : eRx));
+      }
       const vn = tk.vx * nx + tk.vy * ny;
       if (vn < 0) { tk.vx -= nx * vn * 1.7; tk.vy -= ny * vn * 1.7; }
     }
@@ -554,8 +575,8 @@ function sim(room, dt, now) {
 
     // 开火（单发制：装填完成后可发射；炮塔损坏无法开火；弹药架损坏开火有殉爆风险；枪口顶墙禁止隔墙射击）
     if (inp.shoot && p.fireCd <= 0 && p.mag > 0 && canFire) {
-      const mx = tk.x + Math.cos(tk.ta) * 34;
-      const my = tk.y + Math.sin(tk.ta) * 34;
+      const mx = tk.x + Math.cos(tk.ta) * 48;
+      const my = tk.y + Math.sin(tk.ta) * 48;
       // 炮管穿过障碍（隔墙射击）修复：枪口在障碍内则无法开火
       let muzzleBlocked = false;
       for (const o of room.obstacles) {
@@ -595,18 +616,22 @@ function sim(room, dt, now) {
     }
   }
 
-  // ---- 坦克互撞 ----
+  // ---- 坦克互撞（椭圆近似：在 A 的缩放空间内按单位圆处理） ----
   for (let i = 0; i < alive.length; i++) {
     for (let j = i + 1; j < alive.length; j++) {
       const a = alive[i].tank, b = alive[j].tank;
       const dx = b.x - a.x, dy = b.y - a.y;
-      const d = Math.hypot(dx, dy);
-      const min = TANK.r * 2;
-      if (d > 0.001 && d < min) {
-        const nx = dx / d, ny = dy / d;
-        const push = (min - d) / 2;
-        a.x -= nx * push; a.y -= ny * push;
-        b.x += nx * push; b.y += ny * push;
+      const dxs = dx / TANK.rx, dys = dy / TANK.ry; // A 缩放空间
+      const ds = Math.hypot(dxs, dys);
+      const minS = 2;
+      if (ds > 0.001 && ds < minS) {
+        const nxs = dxs / ds, nys = dys / ds;
+        const push = (minS - ds) / 2;
+        a.x -= nxs * push * TANK.rx; a.y -= nys * push * TANK.ry;
+        b.x += nxs * push * TANK.rx; b.y += nys * push * TANK.ry;
+        const dxw = b.x - a.x, dyw = b.y - a.y;
+        const dw = Math.hypot(dxw, dyw) || 0.001;
+        const nx = dxw / dw, ny = dyw / dw;
         const rvx = b.vx - a.vx, rvy = b.vy - a.vy;
         const vn = rvx * nx + rvy * ny;
         if (vn < 0) {
@@ -677,7 +702,7 @@ function sim(room, dt, now) {
     // 命中坦克（模块化损伤：旋转矩形碰撞与贴图轮廓吻合 / 弹药架弱点区域 / 装甲厚度×炮弹穿深判定 / 爆反血条）
     if (!dead) {
       for (const q of alive) {
-        // 允许命中自己：反弹回来的炮弹同样造成伤害（炮口在车体前方 34px，正常开火不会立即自伤）
+        // 允许命中自己：反弹回来的炮弹同样造成伤害（炮口 48 > 命中框半长 47，正常开火不会立即自伤）
         const t2 = q.tank;
         // 命中点局部坐标：+x = 坦克车头方向（子弹相对坦克，符号与车头朝向一致）
         const dx = b.x - t2.x, dy = b.y - t2.y;
@@ -700,8 +725,8 @@ function sim(room, dt, now) {
             // 俄军爆反不低于 30% 时，侧面命中（含弹药架区域）不触发殉爆
             const ruSideSafe = q.type === 'ru' && eraBefore >= tt.era * 0.3;
             const ammoHit = tt.ammoZone === 'rear'
-              ? (rx < -13 && Math.abs(ry) < 13)   // 美军：炮塔尾舱（车体后部中央偏窄）
-              : (Math.abs(ry) > 17 && Math.abs(rx) < 13 && !ruSideSafe); // 俄军：侧面中心（爆反≥30%不殉爆）
+              ? (rx < -21 && Math.abs(ry) < 11)   // 美军：炮塔尾舱（车体后部中央偏窄，按 84x38 比例）
+              : (Math.abs(ry) > 15 && Math.abs(rx) < 26 && !ruSideSafe); // 俄军：侧面中心（爆反≥30%不殉爆）
             if (ammoHit) {
               // 弹药架殉爆：先起火再殉爆（起火视觉效果），立即击毁（弱点命中无视反应装甲）
               q.fireT = FIRE_TIME;
@@ -860,7 +885,7 @@ function sim(room, dt, now) {
     for (const p of alive) {
       const tk = p.tank;
       const dx = tk.x - pu.x, dy = tk.y - pu.y;
-      const rr = TANK.r + POWERUP.r;
+      const rr = (TANK.rx + TANK.ry) / 2 + POWERUP.r;
       if (dx * dx + dy * dy < rr * rr) {
         taken = true;
         if (pu.type === 'health') {
