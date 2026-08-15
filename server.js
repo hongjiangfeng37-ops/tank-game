@@ -71,8 +71,8 @@ const TANK_TYPES = {
   ru: {
     name: '俄军 T90M', maxSpeed: 205, back: 0.35, reload: 6,
     era: 500,                                       // 爆反血量（俄军比美军多 200：300+200）
-    armor: { front: 800, side: 150, back: 700 },
-    armorEra: { front: 1200, side: 950, back: 700 },  // 爆反侧面额外防护 +800（150→950）
+    armor: { front: 800, side: 250, back: 700 },    // 侧面基础装甲 150→250（爆反耗尽后不纸糊）
+    armorEra: { front: 1200, side: 1050, back: 700 },  // 爆反侧面额外防护 +800（250→1050）
     pen: 750, penDrop: 200,
     ammoZone: 'side',   // 弹药架位于侧面中心
     hasLoader: true,    // 自动装弹机：损坏后装填时间翻倍
@@ -618,7 +618,7 @@ function sim(room, dt, now) {
             // 美军：炮塔尾舱（车体后部偏窄区域，精细判定）；俄军：侧面中心
             const ammoHit = tt.ammoZone === 'rear'
               ? (rx < -13 && Math.abs(ry) < 13)   // 美军：炮塔尾舱（车体后部中央偏窄）
-              : (Math.abs(ry) > 15 && Math.abs(rx) < 16); // 俄军：侧面中心
+              : (Math.abs(ry) > 17 && Math.abs(rx) < 13); // 俄军：侧面中心（收窄区域，减少随机命中殉爆）
             if (ammoHit) {
               // 弹药架殉爆：先起火再殉爆（起火视觉效果），立即击毁（弱点命中无视反应装甲）
               q.fireT = FIRE_TIME;
@@ -656,7 +656,12 @@ function sim(room, dt, now) {
                 q.lastHitBy = b.ownerId;
                 // 随机损坏一个模块（美军无装弹机，排除 loader；美军正面易坏炮塔作为后方弹药架弱点的平衡）
                 let avail = PARTS_LIST.filter((n) => q.parts[n] && (q.type === 'ru' || n !== 'loader'));
-                if (q.type === 'us' && zone === 'front' && q.parts.turret && Math.random() < 0.5) {
+                if (q.type === 'us' && zone === 'front' && q.parts.turret && Math.random() < 0.75) {
+                  // 美军正面：75% 坏炮塔
+                  q.parts.turret = false;
+                  brokenParts.push('turret');
+                } else if (q.type === 'us' && zone === 'side' && q.parts.turret && Math.random() < 0.4) {
+                  // 美军侧面击穿：40% 优先坏炮塔（侧面不再只坏无关紧要的模块）
                   q.parts.turret = false;
                   brokenParts.push('turret');
                 } else if (avail.length) {
@@ -673,8 +678,8 @@ function sim(room, dt, now) {
                   q.fireDmg = 0;
                   room.pendingEvents.push({ k: 'fire', id: q.id, x: Math.round(t2.x), y: Math.round(t2.y) });
                 }
-                // 殉爆（非弱点区域）：反应装甲失效后概率大幅提升
-                const detChance = q.era > 0 ? (zone === 'side' ? 0.05 : zone === 'back' ? 0.1 : 0) : (zone === 'side' ? 0.25 : zone === 'back' ? 0.4 : 0);
+                // 殉爆（非弱点区域）：反应装甲失效后概率提升；侧面概率降低（俄军侧面不再一击必殉爆）
+                const detChance = q.era > 0 ? (zone === 'side' ? 0.03 : zone === 'back' ? 0.1 : 0) : (zone === 'side' ? 0.15 : zone === 'back' ? 0.4 : 0);
                 if (zone !== 'front' && Math.random() < detChance) {
                   q.alive = false;
                   q.deadAt = now;
@@ -718,7 +723,13 @@ function sim(room, dt, now) {
                     breakOne(['engine']);
                   }
                 } else {
-                  breakOne(['track']); // 侧面装甲薄基本必穿，此处不特别设定
+                  // 侧面：美军 track/turret 随机（履带已坏时仍能坏炮塔，提高"坏东西"概率）
+                  if (q.type === 'us') {
+                    if (Math.random() < 0.5) breakOne(['track']);
+                    else breakOne(['turret']);
+                  } else {
+                    breakOne(['track']);
+                  }
                 }
                 room.pendingEvents.push({ k: 'hit', id: q.id, zone, parts: brokenParts, pen: false, era: q.era, x: Math.round(b.x), y: Math.round(b.y) });
               } else {
