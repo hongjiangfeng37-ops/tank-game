@@ -862,6 +862,29 @@
     }
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
+    drawFog();
+  }
+
+  // 战争迷雾：仅炮口朝向的扇形 + 自身周围可见；观瞄损坏时只剩极小范围（战术惩罚）
+  function drawFog() {
+    if (phase !== 'play' || !pred || !selfAlive) return;
+    const vx = pred.x, vy = pred.y;
+    const va = autoTurret ? pred.a : mouseAngle;
+    const opticsOk = selfParts.optics;
+    const r = opticsOk ? 430 : 60;          // 扇形视野半径（观瞄损坏：无扇形）
+    const ang = opticsOk ? Math.PI / 6 : 0; // 扇形半角（60°）
+    const selfR = opticsOk ? 120 : 60;      // 自身周围可视圈
+    // evenodd 填充：全屏矩形减去自身圈与炮口扇形，其余区域覆盖迷雾（视野外不可见）
+    ctx.fillStyle = 'rgba(4, 9, 18, 0.95)';
+    ctx.beginPath();
+    ctx.rect(-700, -700, WORLD.w + 1400, WORLD.h + 1400);
+    ctx.arc(vx, vy, selfR, 0, Math.PI * 2);
+    if (ang > 0) {
+      ctx.moveTo(vx, vy);
+      ctx.arc(vx, vy, r, va - ang, va + ang);
+      ctx.closePath();
+    }
+    ctx.fill('evenodd');
   }
 
   function drawPup(pu, now) {
@@ -1130,11 +1153,30 @@
     }
     for (const p of plist) {
       if (p.x == null) continue;
-      mmCtx.fillStyle = p.id === myId ? '#ffffff' : (players.get(p.id) || {}).color || '#888';
-      mmCtx.beginPath();
-      mmCtx.arc(p.x * sx, p.y * sy, p.alive ? 3 : 2, 0, Math.PI * 2);
-      mmCtx.fill();
+      if (p.id === myId) {
+        mmCtx.fillStyle = '#ffffff';
+        mmCtx.beginPath();
+        mmCtx.arc(p.x * sx, p.y * sy, p.alive ? 3 : 2, 0, Math.PI * 2);
+        mmCtx.fill();
+      } else if (selfParts.optics) {
+        mmCtx.fillStyle = (players.get(p.id) || {}).color || '#888';
+        mmCtx.beginPath();
+        mmCtx.arc(p.x * sx, p.y * sy, p.alive ? 3 : 2, 0, Math.PI * 2);
+        mmCtx.fill();
+      } else {
+        // 观瞄损坏：不显示敌人具体位置，只显示忽明忽暗的模糊光点（闪烁 + 轻微抖动）
+        const t = performance.now() / 1000;
+        const blink = 0.2 + 0.4 * (0.5 + 0.5 * Math.sin(t * 3 + (p.id || '').length * 7));
+        const jx = Math.sin(t * 5 + (p.id || '').length * 7) * 18;
+        const jy = Math.cos(t * 4 + (p.id || '').length * 3) * 18;
+        mmCtx.globalAlpha = blink;
+        mmCtx.fillStyle = (players.get(p.id) || {}).color || '#888';
+        mmCtx.beginPath();
+        mmCtx.arc((p.x + jx) * sx, (p.y + jy) * sy, p.alive ? 3 : 2, 0, Math.PI * 2);
+        mmCtx.fill();
+      }
     }
+    mmCtx.globalAlpha = 1;
     for (const pu of pulist) {
       mmCtx.fillStyle = PUP_COLOR[pu.type] || '#fff';
       mmCtx.beginPath(); mmCtx.arc(pu.x * sx, pu.y * sy, 2.5, 0, Math.PI * 2); mmCtx.fill();
@@ -1510,7 +1552,7 @@
       localFireCd = 0.25;
       localMag = 0;
       let reload = TANK_TYPES[selfType].reload;
-      if (!selfParts.loader) reload *= 2; // 俄军装弹机损坏：装填翻倍
+      if (selfType === 'ru' && !selfParts.loader) reload *= 2; // 俄军装弹机损坏；美军无装弹机
       if (selfBuffs.rap > 0) reload *= 0.5;
       localReload = reload;
       // 本地子弹预测：立即显示自己发射的子弹（不等服务器往返），穿深与服务器一致
@@ -1536,10 +1578,10 @@
       const px0 = pb.x, py0 = pb.y;
       pb.x += pb.vx * dt;
       pb.y += pb.vy * dt;
-      // 命中敌方坦克：本地子弹立即消失（旋转矩形判定，与服务器一致）
+      // 命中检测：敌方坦克 + 自己（反弹回来的炮弹会自伤，与服务器一致；players 里含自己）
       let hitTank = false;
       for (const p of players.values()) {
-        if (p.id === myId || !p.render) continue;
+        if (!p.render) continue;
         const r = p.render;
         const dx = r.x - pb.x, dy = r.y - pb.y;
         const fwx = Math.cos(r.a), fwy = Math.sin(r.a);
@@ -1577,6 +1619,29 @@
       if (bounced) {
         pb.pen -= penDrop;
         if (pb.pen <= 0) { predBullets.splice(i, 1); continue; }
+      }
+      // 兜底：子弹中心进入障碍内部（反弹后贴墙/擦角）→ 按最近表面推出（与服务器一致，杜绝穿墙）
+      if (!bounced) {
+        for (const o of mapObstacles) {
+          if (pb.x > o.x && pb.x < o.x + o.w && pb.y > o.y && pb.y < o.y + o.h) {
+            const dl = pb.x - o.x, dr = o.x + o.w - pb.x;
+            const dt = pb.y - o.y, db = o.y + o.h - pb.y;
+            const min = Math.min(dl, dr, dt, db);
+            let nx = 0, ny = 0;
+            if (min === dl) { pb.x = o.x - 5; nx = -1; }
+            else if (min === dr) { pb.x = o.x + o.w + 5; nx = 1; }
+            else if (min === dt) { pb.y = o.y - 5; ny = -1; }
+            else { pb.y = o.y + o.h + 5; ny = 1; }
+            const vn = pb.vx * nx + pb.vy * ny;
+            if (vn < 0) {
+              pb.vx -= 2 * vn * nx;
+              pb.vy -= 2 * vn * ny;
+              pb.pen -= penDrop;
+              if (pb.pen <= 0) { predBullets.splice(i, 1); continue; }
+            }
+            break;
+          }
+        }
       }
       // 寿命与服务器一致（5.5s）：反弹中的炮弹必须渲染完整，不能过早消失
       if (performance.now() - pb.t > 5500) predBullets.splice(i, 1);
@@ -1657,7 +1722,8 @@
     ctx.restore();
     drawJoysticks();
     // 小地图：观瞄部件损坏时不可用（战术惩罚）
-    if (selfParts.optics) drawMinimap(sa);
+    // 小地图始终显示；观瞄损坏时敌人位置改为忽明忽暗的模糊光点（内部处理）
+    drawMinimap(sa);
 
     // 粒子更新
     for (let i = particles.length - 1; i >= 0; i--) {
@@ -1753,6 +1819,29 @@
         report.redN = redN; report.redLx = redN ? +(redSx / redN).toFixed(1) : 0;
         report.yellowN = yellowN; report.yellowLx = yellowN ? +(yellowSx / yellowN).toFixed(1) : 0;
         report.deckF = deckF; report.deckB = deckB;
+        // 迷雾验证：坦克周围 8 方向 260px 采样，视野外应为迷雾暗色（r<9）；视野内（扇形）应可见
+        let fogDark = 0, fogSector = 0;
+        const fAng = autoTurret ? pred.a : mouseAngle;
+        const fogPts = [];
+        for (let k = 0; k < 8; k++) {
+          const a8 = k * Math.PI / 4;
+          const wx8 = pred.x + Math.cos(a8) * 260, wy8 = pred.y + Math.sin(a8) * 260;
+          // 跳过世界边界外的采样点（迷雾只覆盖世界区域）
+          if (wx8 < 0 || wy8 < 0 || wx8 > WORLD.w || wy8 > WORLD.h) { fogPts.push([k, Math.round(wx8), Math.round(wy8), 'off']); continue; }
+          const sx8 = Math.round(((wx8 - cam.x) * cam.s + vw2 / 2) * dpr2);
+          const sy8 = Math.round(((wy8 - cam.y) * cam.s + vh2 / 2) * dpr2);
+          if (sx8 < 0 || sy8 < 0 || sx8 >= canvas.width || sy8 >= canvas.height) { fogPts.push([k, Math.round(wx8), Math.round(wy8), 'off']); continue; }
+          const o8 = (sy8 * canvas.width + sx8) * 4;
+          const r8 = img.data[o8], g8 = img.data[o8 + 1], b8 = img.data[o8 + 2];
+          let dAng = a8 - fAng;
+          while (dAng > Math.PI) dAng -= Math.PI * 2;
+          while (dAng < -Math.PI) dAng += Math.PI * 2;
+          const inSector = Math.abs(dAng) <= Math.PI / 6 + 0.001;
+          fogPts.push([k, Math.round(wx8), Math.round(wy8), r8 + ',' + g8 + ',' + b8, inSector ? 'sector' : 'out']);
+          if (inSector) { if (r8 > 9) fogSector++; }
+          else if (r8 < 9) fogDark++;
+        }
+        report.fogDark = fogDark; report.fogSector = fogSector; report.fogPts = fogPts;
         report.a = +pred.a.toFixed(3); report.ta = +pred.ta.toFixed(3);
         report.x = Math.round(pred.x); report.y = Math.round(pred.y);
         report.vw = vw2; report.vh = vh2; report.dpr = dpr2; report.camS = +cam.s.toFixed(3);
@@ -1790,9 +1879,9 @@
         for (let i = 0; i < 200 && (phase !== 'play' || !pred); i++) await sleepB(100);
         stg('play:' + phase);
         await sleepB(2000);
-        // 朝左墙开火（本地预测子弹 + 服务器双份；反弹后应持续渲染）
+        // 朝右上斜射（自伤功能下反弹炮弹不能原路返回打到自己）：撞上墙反弹后朝右下远离坦克
         autoTurret = false;
-        mouseAngle = Math.PI;
+        mouseAngle = -Math.PI / 4;
         await sleepB(200);
         keys.Space = true;
         await sleepB(150);
