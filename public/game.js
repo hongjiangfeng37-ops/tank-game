@@ -974,40 +974,43 @@
       '<circle cx="97.5" cy="27" r="1.8" fill="#ffe9a3" stroke="#3a3524" stroke-width="0.7"/>' +
       '<circle cx="97.5" cy="57" r="1.8" fill="#ffe9a3" stroke="#3a3524" stroke-width="0.7"/>' +
       '</svg>',
-    // 美军炮塔：菱形（前尖后平、中脊分面立体感）——俯视核心标志
+    // 美军炮塔：分层结构（菱形主体→储物箱层→双舱盖凸台→舱盖→设备），前尖后平
     usTurret: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 52">' +
       '<defs><linearGradient id="ustg" x1="0" y1="0" x2="0" y2="1">' +
       '<stop offset="0" stop-color="#dcc98f"/><stop offset="1" stop-color="#b39a5f"/>' +
       '</linearGradient></defs>' +
-      // 上半个菱形面（受光面，亮）
+      // 第1层：菱形主体双分面（中脊分界，上亮下暗）
       '<path d="M55,25 L45,8 L15,5 L5,13 L5,26 L14,26 Z" fill="url(#ustg)" stroke="#3a3524" stroke-width="1.4"/>' +
-      // 下半个菱形面（背光面，暗）——中脊棱线自然形成
       '<path d="M55,25 L14,26 L5,26 L5,39 L15,47 L45,44 Z" fill="#8d7d52" stroke="#3a3524" stroke-width="1.4"/>' +
-      // 炮盾（前尖处炮管根部，分两层：暗底座 + 亮面）
+      // 炮盾（前尖炮管根部，两层：暗底座 + 亮面）
       '<path d="M47,16.5 L55,25 L47,33.5 L41.5,25 Z" fill="#6b5d3a" stroke="#3a3524" stroke-width="1"/>' +
       '<path d="M46,18.5 L52,25 L46,31.5 L43,25 Z" fill="#8d7a4b" stroke="#3a3524" stroke-width="0.8"/>' +
-      // 舱盖凸台（抬高的平台层）
-      '<circle cx="26" cy="23.5" r="8.6" fill="#a08a55" stroke="#3a3524" stroke-width="1"/>' +
-      '<circle cx="26" cy="23.5" r="7.6" fill="none" stroke="#e2d0a0" stroke-width="1" opacity="0.5"/>' +
-      // 舱盖（顶层）
-      '<circle cx="26" cy="23.5" r="6.2" fill="#b39a5f" stroke="#3a3524" stroke-width="1.2"/>' +
-      '<circle cx="26" cy="23.5" r="2.2" fill="#6f5f3c"/>' +
-      '<line x1="21" y1="23.5" x2="31" y2="23.5" stroke="#3a3524" stroke-width="0.9" opacity="0.8"/>' +
-      // 上表面棱线（与中脊平行，强调斜面）
-      '<path d="M44,13 L17,10" stroke="#e8d7a4" stroke-width="1" opacity="0.5" fill="none"/>' +
-      '<path d="M44,39 L17,42" stroke="#6f5f3c" stroke-width="1" opacity="0.5" fill="none"/>' +
-      // 观瞄镜（带底座）
-      '<rect x="29.5" y="10.5" width="8" height="4.2" rx="1" fill="#1c1f26" stroke="#3a3524" stroke-width="0.7"/>' +
-      '<rect x="31" y="11.3" width="5" height="2.2" rx="0.7" fill="#4a5568"/>' +
-      '<rect x="36.5" y="13.5" width="6" height="3.4" rx="1" fill="#1c1f26" stroke="#3a3524" stroke-width="0.7"/>' +
-      '<rect x="37.7" y="14.3" width="3.6" height="1.8" rx="0.6" fill="#4a5568"/>' +
-      // 尾舱储物篮（后部斜纹）
-      '<line x1="14" y1="10" x2="8" y2="16" stroke="#5c4f31" stroke-width="1.1"/>' +
-      '<line x1="14" y1="16" x2="8" y2="22" stroke="#5c4f31" stroke-width="1.1"/>' +
-      '<line x1="14" y1="22" x2="8" y2="28" stroke="#5c4f31" stroke-width="1.1"/>' +
-      '<line x1="14" y1="28" x2="8" y2="34" stroke="#5c4f31" stroke-width="1.1"/>' +
-      '<line x1="14" y1="34" x2="8" y2="40" stroke="#5c4f31" stroke-width="1.1"/>' +
-      // 天线
+      // 第2层：左尾舱储物箱（原斜纹区升级为箱体）
+      '<rect x="7.5" y="14.5" width="7" height="23" rx="1.5" fill="#9a8452" stroke="#3a3524" stroke-width="1.1"/>' +
+      '<line x1="9" y1="19" x2="13" y2="19" stroke="#5c4f31" stroke-width="1"/>' +
+      '<line x1="9" y1="26" x2="13" y2="26" stroke="#5c4f31" stroke-width="1"/>' +
+      '<line x1="9" y1="33" x2="13" y2="33" stroke="#5c4f31" stroke-width="1"/>' +
+      // 第2层：右侧储物箱（炮盾旁，上分面）
+      '<rect x="40.5" y="10.8" width="6.5" height="5.2" rx="1" fill="#8d7a4b" stroke="#3a3524" stroke-width="1"/>' +
+      '<line x1="41.8" y1="12.2" x2="45.8" y2="12.2" stroke="#d8c48e" stroke-width="0.9" opacity="0.6"/>' +
+      // 第3层：双舱盖凸台（车长右前大、炮手左前小）
+      '<circle cx="34" cy="20" r="6" fill="#b39a5f" stroke="#3a3524" stroke-width="1.1"/>' +
+      '<circle cx="34" cy="20" r="5.2" fill="none" stroke="#e2d0a0" stroke-width="1" opacity="0.5"/>' +
+      '<circle cx="19" cy="19.5" r="4.6" fill="#a08a55" stroke="#3a3524" stroke-width="1"/>' +
+      '<circle cx="19" cy="19.5" r="3.8" fill="none" stroke="#e2d0a0" stroke-width="0.9" opacity="0.5"/>' +
+      // 第4层：舱盖盖（带把手）
+      '<circle cx="34" cy="20" r="4.5" fill="#c8b175" stroke="#3a3524" stroke-width="1.1"/>' +
+      '<circle cx="34" cy="20" r="1.5" fill="#6f5f3c"/>' +
+      '<line x1="30.5" y1="20" x2="37.5" y2="20" stroke="#3a3524" stroke-width="0.9" opacity="0.75"/>' +
+      '<circle cx="19" cy="19.5" r="3.2" fill="#b39a5f" stroke="#3a3524" stroke-width="1"/>' +
+      '<circle cx="19" cy="19.5" r="1.1" fill="#6f5f3c"/>' +
+      // 第5层：设备（.50 机枪、炮手主镜、车长周视镜、天线）
+      '<circle cx="30.5" cy="15.8" r="1.6" fill="#1c1f26" stroke="#3a3524" stroke-width="0.6"/>' +
+      '<line x1="30.5" y1="15.8" x2="34.5" y2="13.6" stroke="#1c1f26" stroke-width="1.3"/>' +
+      '<rect x="24.5" y="8.5" width="7.5" height="3.6" rx="1" fill="#1c1f26" stroke="#3a3524" stroke-width="0.7"/>' +
+      '<rect x="25.8" y="9.3" width="4.8" height="2" rx="0.6" fill="#4a5568"/>' +
+      '<circle cx="38.5" cy="16.5" r="2.1" fill="#1c1f26" stroke="#3a3524" stroke-width="0.6"/>' +
+      '<circle cx="38.5" cy="16.5" r="0.9" fill="#4a5568"/>' +
       '<line x1="15" y1="8" x2="4" y2="0" stroke="#3a3524" stroke-width="1.1"/>' +
       '</svg>',
     // 俄军车体：四方主体 + 前楔车头 + 尾部散热格栅（中部被炮塔盖住，从简）
