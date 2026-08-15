@@ -452,44 +452,44 @@ function startRound(room) {
 
 // ---------------- 物理与战斗 ----------------
 function collideTankWorld(tk, obstacles) {
-  // 旋转椭圆的外接 AABB 半轴（碰撞随坦克朝向变化，方向正确）
-  const ca = Math.cos(tk.a), sa = Math.sin(tk.a);
-  const eRx = Math.abs(TANK.rx * ca) + Math.abs(TANK.ry * sa);
-  const eRy = Math.abs(TANK.rx * sa) + Math.abs(TANK.ry * ca);
-  // 世界墙
-  const minX = WALL_T + eRx, maxX = WORLD.w - WALL_T - eRx;
-  const minY = WALL_T + eRy, maxY = WORLD.h - WALL_T - eRy;
+  // 世界墙：固定外接半轴（不随朝向突变，稳定）
+  const wR = Math.hypot(TANK.rx, TANK.ry); // 外接半径 46
+  const minX = WALL_T + wR, maxX = WORLD.w - WALL_T - wR;
+  const minY = WALL_T + wR, maxY = WORLD.h - WALL_T - wR;
   if (tk.x < minX) { tk.x = minX; if (tk.vx < 0) tk.vx = -tk.vx * 0.3; }
   else if (tk.x > maxX) { tk.x = maxX; if (tk.vx > 0) tk.vx = -tk.vx * 0.3; }
   if (tk.y < minY) { tk.y = minY; if (tk.vy < 0) tk.vy = -tk.vy * 0.3; }
   else if (tk.y > maxY) { tk.y = maxY; if (tk.vy > 0) tk.vy = -tk.vy * 0.3; }
-  // 障碍：椭圆 vs AABB（缩放法）
+  // 障碍：旋转矩形（OBB）vs AABB，SAT 分离轴精确碰撞（稳定，不随朝向突变）
+  const ca = Math.cos(tk.a), sa = Math.sin(tk.a);
+  const tc = [ // 坦克矩形 4 角（世界）
+    [tk.x + ca * TANK.rx - sa * TANK.ry, tk.y + sa * TANK.rx + ca * TANK.ry],
+    [tk.x + ca * TANK.rx + sa * TANK.ry, tk.y + sa * TANK.rx - ca * TANK.ry],
+    [tk.x - ca * TANK.rx + sa * TANK.ry, tk.y - sa * TANK.rx - ca * TANK.ry],
+    [tk.x - ca * TANK.rx - sa * TANK.ry, tk.y - sa * TANK.rx + ca * TANK.ry],
+  ];
   for (const o of obstacles) {
-    const ox1 = (o.x - tk.x) / eRx, ox2 = (o.x + o.w - tk.x) / eRx;
-    const oy1 = (o.y - tk.y) / eRy, oy2 = (o.y + o.h - tk.y) / eRy;
-    const cxs = clamp(0, ox1, ox2), cys = clamp(0, oy1, oy2);
-    const d2 = cxs * cxs + cys * cys;
-    if (d2 < 1) {
-      const penX = cxs * eRx, penY = cys * eRy;
-      const penD = Math.hypot(penX, penY);
-      let nx, ny, R;
-      if (penD > 0.5) {
-        nx = penX / penD; ny = penY / penD;
-        R = 1 / Math.sqrt((nx * nx) / (eRx * eRx) + (ny * ny) / (eRy * eRy));
-        tk.x += nx * (R - penD);
-        tk.y += ny * (R - penD);
-      } else {
-        const dl = Math.abs(ox1), dr = Math.abs(ox2), dt2 = Math.abs(oy1), db = Math.abs(oy2);
-        const minD = Math.min(dl, dr, dt2, db);
-        if (minD === dl) { nx = -1; ny = 0; R = eRx; }
-        else if (minD === dr) { nx = 1; ny = 0; R = eRx; }
-        else if (minD === dt2) { nx = 0; ny = -1; R = eRy; }
-        else { nx = 0; ny = 1; R = eRy; }
-        tk.x += nx * (R - minD * (nx !== 0 ? eRx : eRy));
-        tk.y += ny * (R - minD * (ny !== 0 ? eRy : eRx));
-      }
-      const vn = tk.vx * nx + tk.vy * ny;
-      if (vn < 0) { tk.vx -= nx * vn * 1.7; tk.vy -= ny * vn * 1.7; }
+    const corners = [[o.x, o.y], [o.x + o.w, o.y], [o.x + o.w, o.y + o.h], [o.x, o.y + o.h]];
+    const axes = [[ca, sa], [-sa, ca], [1, 0], [0, 1]];
+    let minOverlap = Infinity, ax = 0, ay = 0;
+    let separated = false;
+    for (const [ax2, ay2] of axes) {
+      let tMin = Infinity, tMax = -Infinity;
+      for (const [px, py] of tc) { const v = px * ax2 + py * ay2; if (v < tMin) tMin = v; if (v > tMax) tMax = v; }
+      let oMin = Infinity, oMax = -Infinity;
+      for (const [px, py] of corners) { const v = px * ax2 + py * ay2; if (v < oMin) oMin = v; if (v > oMax) oMax = v; }
+      const overlap = Math.min(tMax, oMax) - Math.max(tMin, oMin);
+      if (overlap <= 0) { separated = true; break; }
+      if (overlap < minOverlap) { minOverlap = overlap; ax = ax2; ay = ay2; }
+    }
+    if (!separated && minOverlap > 0) {
+      // 法线指向远离障碍中心（把坦克推出障碍）
+      const cx = tk.x - (o.x + o.w / 2), cy = tk.y - (o.y + o.h / 2);
+      if (ax * cx + ay * cy < 0) { ax = -ax; ay = -ay; }
+      tk.x += ax * minOverlap;
+      tk.y += ay * minOverlap;
+      const vn = tk.vx * ax + tk.vy * ay;
+      if (vn < 0) { tk.vx -= ax * vn * 1.7; tk.vy -= ay * vn * 1.7; }
     }
   }
 }
