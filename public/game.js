@@ -983,10 +983,9 @@
     ctx.rotate(t.ta + (t.prt && !t.prt[1] ? 0.5 : 0));
     const turImg = t.ty === 'ru' ? TANK_IMAGES.ruTurret : TANK_IMAGES.usTurret;
     if (turImg) {
-      // 炮塔贴图自带炮管（真实比例，宽 52 对齐）
-      const s = 0.5;
+      // 炮塔铺满 52x44（与车体一致，不再"小头爸爸"）
       ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(turImg, -turImg.width * s / 2, -turImg.height * s / 2, turImg.width * s, turImg.height * s);
+      ctx.drawImage(turImg, -26, -22, 52, 44);
     } else {
       ctx.fillStyle = t.ty === 'ru' ? '#4a5a48' : '#46524a';
       ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.fill();
