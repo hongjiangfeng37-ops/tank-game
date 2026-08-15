@@ -945,9 +945,9 @@
     ctx.fillText(Math.ceil(pu.life) + 's', pu.x, pu.y - 22);
   }
 
-    // ---------------- 坦克贴图（手绘 SVG 细化版，车头朝右） ----------------
+    // ---------------- 坦克贴图（手绘 SVG，车头朝右；车体方正、细节集中在炮塔） ----------------
   const TANK_SVG = {
-    // 美军 M1A1：沙黄车身、前部楔形首上装甲、侧裙板、车尾引擎格栅
+    // 美军车体：四方主体 + 露出的前楔形车头与尾部格栅（中部被炮塔盖住，从简）
     usBody: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 84">' +
       '<defs><linearGradient id="usbg" x1="0" y1="0" x2="0" y2="1">' +
       '<stop offset="0" stop-color="#d2bd83"/><stop offset="0.5" stop-color="#c2aa6d"/><stop offset="1" stop-color="#9a8452"/>' +
@@ -957,60 +957,49 @@
       '<rect x="3" y="68" width="94" height="13" rx="6" fill="#151a21"/>' +
       '<line x1="8" y1="9.5" x2="97" y2="9.5" stroke="#0a0d12" stroke-width="4" stroke-dasharray="2.6 4.4"/>' +
       '<line x1="8" y1="74.5" x2="97" y2="74.5" stroke="#0a0d12" stroke-width="4" stroke-dasharray="2.6 4.4"/>' +
-      // 侧裙板上/下缘（履带上方装甲带）
+      // 侧裙板上下缘
       '<rect x="5" y="17" width="90" height="3.5" fill="#3c3527"/>' +
       '<rect x="5" y="63.5" width="90" height="3.5" fill="#3c3527"/>' +
-      // 车体主体：前部宽、车尾圆角收窄
-      '<path d="M28,20 L93,20 Q99.5,20 99.5,27 L99.5,57 Q99.5,64 93,64 L28,64 L13,50 L13,34 Z" fill="url(#usbg)" stroke="#3a3524" stroke-width="1.5"/>' +
-      // 前部楔形首上装甲（正面菱形凹入感，向上向内收）
-      '<path d="M46,21.5 L96,21.5 Q99,21.5 99,27 L99,57 Q99,62.5 96,62.5 L46,62.5 L32,42 Z" fill="#a9905b" stroke="#3a3524" stroke-width="1.2"/>' +
-      // 首上顶部高光斜棱（楔形棱线）
-      '<path d="M50,23.5 L92,23.5 L78,42 L50,42 Z" fill="#dcc98f" opacity="0.5"/>' +
-      '<path d="M32,42 L50,23.5" stroke="#dcc98f" stroke-width="1" opacity="0.5"/>' +
-      // 车尾引擎格栅
-      '<rect x="15" y="25" width="14" height="34" rx="2" fill="#8d7a4b" stroke="#3a3524" stroke-width="1"/>' +
-      '<line x1="15" y1="31.5" x2="29" y2="31.5" stroke="#5c4f31" stroke-width="1"/>' +
-      '<line x1="15" y1="38" x2="29" y2="38" stroke="#5c4f31" stroke-width="1"/>' +
-      '<line x1="15" y1="44.5" x2="29" y2="44.5" stroke="#5c4f31" stroke-width="1"/>' +
-      '<line x1="15" y1="51" x2="29" y2="51" stroke="#5c4f31" stroke-width="1"/>' +
-      // 驾驶员舱盖 + 车体细节线
-      '<circle cx="54" cy="42" r="4.2" fill="#9a8452" stroke="#3a3524" stroke-width="1"/>' +
-      '<circle cx="54" cy="42" r="1.5" fill="#6f5f3c"/>' +
-      '<line x1="46" y1="28" x2="80" y2="28" stroke="#8a7a4e" stroke-width="1" opacity="0.6"/>' +
-      '<line x1="46" y1="56" x2="80" y2="56" stroke="#8a7a4e" stroke-width="1" opacity="0.6"/>' +
-      // 前灯（车头左右）
-      '<circle cx="96.5" cy="29" r="2.1" fill="#ffe9a3" stroke="#3a3524" stroke-width="0.8"/>' +
-      '<circle cx="96.5" cy="55" r="2.1" fill="#ffe9a3" stroke="#3a3524" stroke-width="0.8"/>' +
-      // 天线（车尾斜伸）
-      '<line x1="30" y1="40" x2="9" y2="22" stroke="#2a2f3a" stroke-width="1.2"/>' +
+      // 车体主体（四四方方，圆角）
+      '<path d="M20,19 L96,19 Q100,19 100,25 L100,59 Q100,65 96,65 L20,65 L12,55 L12,29 L20,19 Z" fill="url(#usbg)" stroke="#3a3524" stroke-width="1.5"/>' +
+      // 前部楔形车头（炮塔前方露出部分）
+      '<path d="M58,21 L96,21 Q99,21 99,25 L99,59 Q99,63 96,63 L58,63 L44,42 Z" fill="#a9905b" stroke="#3a3524" stroke-width="1"/>' +
+      // 尾部引擎格栅（炮塔后方露出部分）
+      '<rect x="13" y="25" width="10" height="34" rx="2" fill="#8d7a4b" stroke="#3a3524" stroke-width="0.9"/>' +
+      '<line x1="13" y1="31.5" x2="23" y2="31.5" stroke="#5c4f31" stroke-width="0.9"/>' +
+      '<line x1="13" y1="38" x2="23" y2="38" stroke="#5c4f31" stroke-width="0.9"/>' +
+      '<line x1="13" y1="44.5" x2="23" y2="44.5" stroke="#5c4f31" stroke-width="0.9"/>' +
+      '<line x1="13" y1="51" x2="23" y2="51" stroke="#5c4f31" stroke-width="0.9"/>' +
+      // 前灯（车头）
+      '<circle cx="97.5" cy="27" r="1.8" fill="#ffe9a3" stroke="#3a3524" stroke-width="0.7"/>' +
+      '<circle cx="97.5" cy="57" r="1.8" fill="#ffe9a3" stroke="#3a3524" stroke-width="0.7"/>' +
       '</svg>',
-    // 美军炮塔：菱形（正面尖、两侧斜边向内凹入）、炮盾、尾舱储物篮、舱盖
+    // 美军炮塔：菱形（前尖后平、中脊分面立体感）——俯视核心标志
     usTurret: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 52">' +
       '<defs><linearGradient id="ustg" x1="0" y1="0" x2="0" y2="1">' +
-      '<stop offset="0" stop-color="#c8b175"/><stop offset="1" stop-color="#93804f"/>' +
+      '<stop offset="0" stop-color="#dcc98f"/><stop offset="1" stop-color="#b39a5f"/>' +
       '</linearGradient></defs>' +
-      // 菱形主体：右（前）尖、左右斜边内凹、左（后）平
-      '<path d="M53,25 L44,9 L16,6 L6.5,13 L6.5,39 L16,46 L44,43 Z" fill="url(#ustg)" stroke="#3a3524" stroke-width="1.5"/>' +
-      // 顶部棱线（菱形中脊）
-      '<path d="M53,25 L44,9" stroke="#e2d0a0" stroke-width="1.1" opacity="0.55"/>' +
-      '<path d="M53,25 L44,43" stroke="#7c6b40" stroke-width="1.1" opacity="0.55"/>' +
-      // 炮盾（炮管根部加强，正面）
-      '<path d="M46,17 L53,25 L46,33 L41,25 Z" fill="#7a6c46" stroke="#3a3524" stroke-width="1"/>' +
-      // 舱盖（车长）+ 观瞄镜
-      '<circle cx="26" cy="23" r="6.2" fill="#a08a55" stroke="#3a3524" stroke-width="1.1"/>' +
-      '<circle cx="26" cy="23" r="2.2" fill="#6f5f3c"/>' +
-      '<rect x="33" y="17" width="6" height="3.2" rx="1" fill="#2a2f3a"/>' +
-      '<rect x="40" y="21" width="6" height="3" rx="1" fill="#2a2f3a"/>' +
+      // 上半个菱形面（受光面，亮）
+      '<path d="M55,25 L45,8 L15,5 L5,13 L5,26 L14,26 Z" fill="url(#ustg)" stroke="#3a3524" stroke-width="1.4"/>' +
+      // 下半个菱形面（背光面，暗）——中脊棱线自然形成
+      '<path d="M55,25 L14,26 L5,26 L5,39 L15,47 L45,44 Z" fill="#8d7d52" stroke="#3a3524" stroke-width="1.4"/>' +
+      // 炮盾（前尖处炮管根部）
+      '<path d="M47,17 L55,25 L47,33 L42,25 Z" fill="#7a6c46" stroke="#3a3524" stroke-width="1"/>' +
+      // 舱盖（跨中脊）+ 观瞄镜
+      '<circle cx="26" cy="23.5" r="6.2" fill="#a08a55" stroke="#3a3524" stroke-width="1.1"/>' +
+      '<circle cx="26" cy="23.5" r="2.2" fill="#6f5f3c"/>' +
+      '<rect x="30" y="12" width="6" height="3.2" rx="1" fill="#2a2f3a"/>' +
+      '<rect x="36" y="15" width="5" height="2.8" rx="1" fill="#2a2f3a"/>' +
       // 尾舱储物篮（后部斜纹）
-      '<line x1="14" y1="10" x2="9" y2="16" stroke="#5c4f31" stroke-width="1.1"/>' +
-      '<line x1="14" y1="16" x2="9" y2="22" stroke="#5c4f31" stroke-width="1.1"/>' +
-      '<line x1="14" y1="22" x2="9" y2="28" stroke="#5c4f31" stroke-width="1.1"/>' +
-      '<line x1="14" y1="28" x2="9" y2="34" stroke="#5c4f31" stroke-width="1.1"/>' +
-      '<line x1="14" y1="34" x2="9" y2="40" stroke="#5c4f31" stroke-width="1.1"/>' +
+      '<line x1="14" y1="10" x2="8" y2="16" stroke="#5c4f31" stroke-width="1.1"/>' +
+      '<line x1="14" y1="16" x2="8" y2="22" stroke="#5c4f31" stroke-width="1.1"/>' +
+      '<line x1="14" y1="22" x2="8" y2="28" stroke="#5c4f31" stroke-width="1.1"/>' +
+      '<line x1="14" y1="28" x2="8" y2="34" stroke="#5c4f31" stroke-width="1.1"/>' +
+      '<line x1="14" y1="34" x2="8" y2="40" stroke="#5c4f31" stroke-width="1.1"/>' +
       // 天线
-      '<line x1="14" y1="9" x2="4" y2="1" stroke="#3a3524" stroke-width="1.1"/>' +
+      '<line x1="15" y1="8" x2="4" y2="0" stroke="#3a3524" stroke-width="1.1"/>' +
       '</svg>',
-    // 俄军 T80U：深绿车身、楔形首上、车尾散热格栅、侧裙板
+    // 俄军车体：四方主体 + 前楔车头 + 尾部散热格栅（中部被炮塔盖住，从简）
     ruBody: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 78">' +
       '<defs><linearGradient id="rubg" x1="0" y1="0" x2="0" y2="1">' +
       '<stop offset="0" stop-color="#64764f"/><stop offset="0.5" stop-color="#4c5c3e"/><stop offset="1" stop-color="#39472c"/>' +
@@ -1023,57 +1012,52 @@
       // 侧裙板上下缘
       '<rect x="5" y="16" width="90" height="3.5" fill="#2a3526"/>' +
       '<rect x="5" y="58.5" width="90" height="3.5" fill="#2a3526"/>' +
-      // 车体主体（前楔较钝、尾部平直）
-      '<path d="M30,17.5 L90,17.5 Q97,17.5 97,23.5 L97,54.5 Q97,60.5 90,60.5 L30,60.5 L14,39 Z" fill="url(#rubg)" stroke="#222b1d" stroke-width="1.5"/>' +
-      // 首上装甲面（楔形）
-      '<path d="M48,19 L93,19 Q96,19 96,23 L96,55 Q96,59 93,59 L48,59 L34,39 Z" fill="#55684c" stroke="#222b1d" stroke-width="1.1"/>' +
-      '<path d="M52,21 L90,21 L76,39 L52,39 Z" fill="#7b8f66" opacity="0.45"/>' +
-      // 车尾散热格栅（横条）
-      '<rect x="14" y="22" width="16" height="34" rx="2" fill="#3d4a34" stroke="#222b1d" stroke-width="1"/>' +
-      '<line x1="14" y1="28.4" x2="30" y2="28.4" stroke="#222b1d" stroke-width="1"/>' +
-      '<line x1="14" y1="34.8" x2="30" y2="34.8" stroke="#222b1d" stroke-width="1"/>' +
-      '<line x1="14" y1="41.2" x2="30" y2="41.2" stroke="#222b1d" stroke-width="1"/>' +
-      '<line x1="14" y1="47.6" x2="30" y2="47.6" stroke="#222b1d" stroke-width="1"/>' +
-      // 驾驶员舱盖
-      '<circle cx="56" cy="39" r="3.8" fill="#4a5a3c" stroke="#222b1d" stroke-width="1"/>' +
-      '<circle cx="56" cy="39" r="1.3" fill="#2f3a26"/>' +
+      // 车体主体（四四方方）
+      '<path d="M20,17.5 L90,17.5 Q97,17.5 97,23.5 L97,54.5 Q97,60.5 90,60.5 L20,60.5 L12,50.5 L12,27.5 Z" fill="url(#rubg)" stroke="#222b1d" stroke-width="1.5"/>' +
+      // 前部楔形车头
+      '<path d="M58,19 L93,19 Q96,19 96,23 L96,55 Q96,59 93,59 L58,59 L44,39 Z" fill="#55684c" stroke="#222b1d" stroke-width="1"/>' +
+      // 尾部散热格栅
+      '<rect x="13" y="23" width="10" height="32" rx="2" fill="#3d4a34" stroke="#222b1d" stroke-width="0.9"/>' +
+      '<line x1="13" y1="29.8" x2="23" y2="29.8" stroke="#222b1d" stroke-width="0.9"/>' +
+      '<line x1="13" y1="36.6" x2="23" y2="36.6" stroke="#222b1d" stroke-width="0.9"/>' +
+      '<line x1="13" y1="43.4" x2="23" y2="43.4" stroke="#222b1d" stroke-width="0.9"/>' +
+      '<line x1="13" y1="50.2" x2="23" y2="50.2" stroke="#222b1d" stroke-width="0.9"/>' +
       // 前灯
-      '<circle cx="94" cy="27" r="1.9" fill="#ffe9a3"/>' +
-      '<circle cx="94" cy="51" r="1.9" fill="#ffe9a3"/>' +
-      // 天线
-      '<line x1="33" y1="37" x2="11" y2="21" stroke="#2a3526" stroke-width="1.2"/>' +
+      '<circle cx="94.5" cy="25" r="1.7" fill="#ffe9a3"/>' +
+      '<circle cx="94.5" cy="53" r="1.7" fill="#ffe9a3"/>' +
       '</svg>',
-    // 俄军炮塔：圆形 + 前半球爆反方块网格 + 红外大灯
+    // 俄军炮塔：圆形 + 全圆爆反(ERA)方块网格（俯视核心）
     ruTurret: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 52">' +
       '<defs><linearGradient id="rutg" x1="0" y1="0" x2="0" y2="1">' +
       '<stop offset="0" stop-color="#627450"/><stop offset="1" stop-color="#44533a"/>' +
       '</linearGradient></defs>' +
       // 圆炮塔主体
       '<circle cx="27" cy="26" r="17.5" fill="url(#rutg)" stroke="#222b1d" stroke-width="1.5"/>' +
-      '<circle cx="27" cy="26" r="13.5" fill="none" stroke="#222b1d" stroke-width="0.7" opacity="0.35"/>' +
-      // 爆反(ERA)方块：前半球密集网格（车头朝右）
-      '<rect x="30" y="17" width="4.5" height="4.5" fill="#3f4d33" stroke="#222b1d" stroke-width="0.7"/>' +
-      '<rect x="35.5" y="17" width="4.5" height="4.5" fill="#3f4d33" stroke="#222b1d" stroke-width="0.7"/>' +
-      '<rect x="41" y="17" width="4.5" height="4.5" fill="#3f4d33" stroke="#222b1d" stroke-width="0.7"/>' +
-      '<rect x="30" y="23" width="4.5" height="4.5" fill="#3f4d33" stroke="#222b1d" stroke-width="0.7"/>' +
-      '<rect x="35.5" y="23" width="4.5" height="4.5" fill="#3f4d33" stroke="#222b1d" stroke-width="0.7"/>' +
-      '<rect x="41" y="23" width="4.5" height="4.5" fill="#3f4d33" stroke="#222b1d" stroke-width="0.7"/>' +
-      '<rect x="30" y="29" width="4.5" height="4.5" fill="#3f4d33" stroke="#222b1d" stroke-width="0.7"/>' +
-      '<rect x="35.5" y="29" width="4.5" height="4.5" fill="#3f4d33" stroke="#222b1d" stroke-width="0.7"/>' +
-      '<rect x="41" y="29" width="4.5" height="4.5" fill="#3f4d33" stroke="#222b1d" stroke-width="0.7"/>' +
-      '<rect x="30" y="35" width="4.5" height="4.5" fill="#3f4d33" stroke="#222b1d" stroke-width="0.7"/>' +
-      '<rect x="35.5" y="35" width="4.5" height="4.5" fill="#3f4d33" stroke="#222b1d" stroke-width="0.7"/>' +
-      // 左侧（后半球）稀疏爆反
-      '<rect x="13" y="24" width="4.5" height="4.5" fill="#3f4d33" stroke="#222b1d" stroke-width="0.7"/>' +
-      '<rect x="13" y="34" width="4.5" height="4.5" fill="#3f4d33" stroke="#222b1d" stroke-width="0.7"/>' +
-      // 舱盖
-      '<circle cx="20" cy="19" r="5" fill="#4c5c3e" stroke="#222b1d" stroke-width="1"/>' +
-      '<circle cx="20" cy="19" r="1.7" fill="#2f3a26"/>' +
-      // 炮长镜（前方）
+      // 爆反(ERA)方块：4x4 全圆网格（中心留操作区给舱盖）
+      '<rect x="13" y="14" width="5.5" height="5.5" fill="#4d5e35" stroke="#222b1d" stroke-width="0.7"/>' +
+      '<rect x="20" y="14" width="5.5" height="5.5" fill="#4d5e35" stroke="#222b1d" stroke-width="0.7"/>' +
+      '<rect x="27" y="14" width="5.5" height="5.5" fill="#4d5e35" stroke="#222b1d" stroke-width="0.7"/>' +
+      '<rect x="34" y="14" width="5.5" height="5.5" fill="#4d5e35" stroke="#222b1d" stroke-width="0.7"/>' +
+      '<rect x="13" y="21" width="5.5" height="5.5" fill="#4d5e35" stroke="#222b1d" stroke-width="0.7"/>' +
+      '<rect x="20" y="21" width="5.5" height="5.5" fill="#4d5e35" stroke="#222b1d" stroke-width="0.7"/>' +
+      '<rect x="27" y="21" width="5.5" height="5.5" fill="#4d5e35" stroke="#222b1d" stroke-width="0.7"/>' +
+      '<rect x="34" y="21" width="5.5" height="5.5" fill="#4d5e35" stroke="#222b1d" stroke-width="0.7"/>' +
+      '<rect x="13" y="28" width="5.5" height="5.5" fill="#4d5e35" stroke="#222b1d" stroke-width="0.7"/>' +
+      '<rect x="20" y="28" width="5.5" height="5.5" fill="#4d5e35" stroke="#222b1d" stroke-width="0.7"/>' +
+      '<rect x="27" y="28" width="5.5" height="5.5" fill="#4d5e35" stroke="#222b1d" stroke-width="0.7"/>' +
+      '<rect x="34" y="28" width="5.5" height="5.5" fill="#4d5e35" stroke="#222b1d" stroke-width="0.7"/>' +
+      '<rect x="13" y="35" width="5.5" height="5.5" fill="#4d5e35" stroke="#222b1d" stroke-width="0.7"/>' +
+      '<rect x="20" y="35" width="5.5" height="5.5" fill="#4d5e35" stroke="#222b1d" stroke-width="0.7"/>' +
+      '<rect x="27" y="35" width="5.5" height="5.5" fill="#4d5e35" stroke="#222b1d" stroke-width="0.7"/>' +
+      '<rect x="34" y="35" width="5.5" height="5.5" fill="#4d5e35" stroke="#222b1d" stroke-width="0.7"/>' +
+      // 舱盖（中心）
+      '<circle cx="26.5" cy="28.5" r="5.2" fill="#4c5c3e" stroke="#222b1d" stroke-width="1"/>' +
+      '<circle cx="26.5" cy="28.5" r="1.8" fill="#2f3a26"/>' +
+      // 炮长镜（上方）
       '<rect x="27" y="11" width="7" height="3.4" rx="1" fill="#2a3526"/>' +
-      // 红外大灯（T80 特色，右前方）
-      '<circle cx="39" cy="32" r="3.4" fill="#2a3526" stroke="#222b1d" stroke-width="0.8"/>' +
-      '<circle cx="39" cy="32" r="1.5" fill="#c9d6c0"/>' +
+      // 红外大灯（右侧 ERA 上，T80 标志）
+      '<circle cx="41" cy="30" r="3.2" fill="#2a3526" stroke="#222b1d" stroke-width="0.8"/>' +
+      '<circle cx="41" cy="30" r="1.4" fill="#c9d6c0"/>' +
       // 横风传感器天线
       '<line x1="30" y1="6.5" x2="25" y2="1" stroke="#2a3526" stroke-width="1.2"/>' +
       '</svg>',
