@@ -78,6 +78,10 @@
   const ctx = canvas.getContext('2d');
   const mm = $('minimap');
   const mmCtx = mm.getContext('2d');
+  // 迷雾用离屏蒙版：黑底画布上擦出可视区（透明），再覆盖到主画布
+  // 黑区=迷雾（不透明）、透明区=露出场景；重叠区域无影响
+  const fogCanvas = document.createElement('canvas');
+  const fogCtx = fogCanvas.getContext('2d');
   const els = {
     topbar: $('topbar'), codeText: $('codeText'), btnCopy: $('btnCopy'),
     pingText: $('pingText'), btnMute: $('btnMute'), btnLeave: $('btnLeave'), btnPub: $('btnPub'),
@@ -673,10 +677,10 @@
       if (touch.aim) {
         const len = Math.hypot(touch.aim.dx, touch.aim.dy);
         if (len > 8) { ta = Math.atan2(touch.aim.dy, touch.aim.dx); autoTurret = false; }
-        shoot = true; // 按住右摇杆即开火
+        // 摇杆只负责瞄准，不再自动开火（取消"按住摇杆即开火"，避免中心误触）
       }
       if (touch.boost) boost = true;
-      if (fireHeld) shoot = true; // 独立开火键
+      if (fireHeld) shoot = true; // 独立开火键（按住连发）
     }
     return { thr, steer, ta, shoot, boost };
   }
@@ -865,26 +869,56 @@
     drawFog();
   }
 
-  // 战争迷雾：仅炮口朝向的扇形 + 自身周围可见；观瞄损坏时只剩极小范围（战术惩罚）
+  // 战争迷雾：车头方向主视野 + 炮口方向扩展视野 + 自身周围；完全不透明
+  // 实现：离屏黑底蒙版 → 擦出可视区（透明）→ 覆盖到主画布（黑=迷雾，透明=场景）
   function drawFog() {
     if (phase !== 'play' || !pred || !selfAlive) return;
     const vx = pred.x, vy = pred.y;
-    const va = autoTurret ? pred.a : mouseAngle;
     const opticsOk = selfParts.optics;
-    const r = opticsOk ? 430 : 60;          // 扇形视野半径（观瞄损坏：无扇形）
-    const ang = opticsOk ? Math.PI / 6 : 0; // 扇形半角（60°）
-    const selfR = opticsOk ? 120 : 60;      // 自身周围可视圈
-    // evenodd 填充：全屏矩形减去自身圈与炮口扇形，其余区域覆盖迷雾（视野外不可见）
-    ctx.fillStyle = 'rgba(4, 9, 18, 0.95)';
-    ctx.beginPath();
-    ctx.rect(-700, -700, WORLD.w + 1400, WORLD.h + 1400);
-    ctx.arc(vx, vy, selfR, 0, Math.PI * 2);
-    if (ang > 0) {
-      ctx.moveTo(vx, vy);
-      ctx.arc(vx, vy, r, va - ang, va + ang);
-      ctx.closePath();
+    const selfR = opticsOk ? 120 : 70;   // 自身周围可视圈（观瞄损坏时极小）
+    const rMain = opticsOk ? 460 : 0;    // 车头主视野半径
+    const mainAng = Math.PI / 4;         // 车头主视野半角（90°）
+    const rTur = opticsOk ? 300 : 0;     // 炮口扩展视野半径
+    const turAng = Math.PI / 5;          // 炮口扩展视野半角（72°）
+    const dprF = Math.min(window.devicePixelRatio || 1, 2);
+    const vwF = canvas.clientWidth, vhF = canvas.clientHeight;
+    // 1) 蒙版：全屏黑底（设备像素）
+    if (fogCanvas.width !== canvas.width || fogCanvas.height !== canvas.height) {
+      fogCanvas.width = canvas.width;
+      fogCanvas.height = canvas.height;
     }
-    ctx.fill('evenodd');
+    fogCtx.setTransform(1, 0, 0, 1, 0, 0);
+    fogCtx.globalCompositeOperation = 'source-over';
+    fogCtx.fillStyle = '#000';
+    fogCtx.fillRect(0, 0, fogCanvas.width, fogCanvas.height);
+    // 2) 擦除可视区（自身圈 + 车头扇形 + 炮口扇形）→ 透明
+    //    变换与主画布相机一致（世界 → 设备像素）
+    fogCtx.save();
+    fogCtx.translate(vwF / 2 * dprF, vhF / 2 * dprF);
+    fogCtx.scale(cam.s, cam.s);
+    fogCtx.translate(-cam.x, -cam.y);
+    fogCtx.globalCompositeOperation = 'destination-out';
+    fogCtx.fillStyle = '#fff';
+    fogCtx.beginPath();
+    fogCtx.arc(vx, vy, selfR, 0, Math.PI * 2);
+    if (rMain) {
+      fogCtx.moveTo(vx, vy);
+      fogCtx.arc(vx, vy, rMain, pred.a - mainAng, pred.a + mainAng);
+      fogCtx.closePath();
+    }
+    if (rTur) {
+      const ta = autoTurret ? pred.a : mouseAngle;
+      fogCtx.moveTo(vx, vy);
+      fogCtx.arc(vx, vy, rTur, ta - turAng, ta + turAng);
+      fogCtx.closePath();
+    }
+    fogCtx.fill();
+    fogCtx.restore();
+    // 3) 蒙版覆盖到主画布（黑区盖住场景=迷雾，透明区露出场景）
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(fogCanvas, 0, 0);
+    ctx.restore();
   }
 
   function drawPup(pu, now) {
@@ -1123,7 +1157,7 @@
         ctx.fillText(label, j.sx, j.sy - JOY_R - 10);
       }
     };
-    draw(touch.aim, '瞄准开火');
+    draw(touch.aim, '瞄准');
     if (!touch.aim) {
       ctx.fillStyle = 'rgba(255,255,255,0.14)';
       ctx.beginPath(); ctx.arc(vw - 95, vh - 105, 40, 0, Math.PI * 2); ctx.fill();
