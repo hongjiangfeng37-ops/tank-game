@@ -312,15 +312,82 @@ function addPlayer(room, conn, name) {
   return p;
 }
 
+// 单人模式 AI：服务器内部玩家（无连接），行为在 sim 中由 botThink 驱动
+function addBot(room, name) {
+  const id = 'p' + (nextPlayerId++);
+  const p = {
+    id, name, conn: null, room, isBot: true,
+    tank: null, alive: false, deadAt: 0,
+    kills: 0, wins: 0,
+    type: 'ru', era: TANK_TYPES.ru.era, // 默认俄军；玩家选型后自动取相反型号
+    shield: false, rapid: 0, triple: 0, fireCd: 0,
+    parts: { track: true, turret: true, engine: true, ammo: true, optics: true, loader: true },
+    repairT: 0, fireT: 0, fireDmg: 0,
+    input: { thr: 0, steer: 0, ta: null, shoot: false, boost: false },
+  };
+  room.players.set(id, p);
+  if (room.phase === 'countdown') spawnPlayer(room, p);
+  room.pendingEvents.push({ k: 'join', name: p.name });
+  broadcastRoom(room);
+  broadcast(room);
+  return p;
+}
+
+// AI 行为：接近/绕圈目标、炮塔瞄准、装填好即开火、简单避障
+function botThink(p, room) {
+  const tk = p.tank;
+  let target = null;
+  for (const q of room.players.values()) {
+    if (!q.isBot && q.alive && q.tank) { target = q; break; }
+  }
+  if (!target) { p.input = { thr: 0, steer: 0, ta: tk.ta, shoot: false, boost: false }; return; }
+  const tt = target.tank;
+  const dx = tt.x - tk.x, dy = tt.y - tk.y;
+  const dist = Math.hypot(dx, dy);
+  const ang = Math.atan2(dy, dx);
+  let desired = ang;
+  if (dist < 270) desired = ang + Math.PI;   // 过近：掉头拉开
+  else if (dist > 480) desired = ang;        // 过远：接近
+  else desired = ang + 0.7;                  // 中距离：绕圈机动
+  let diff = desired - tk.a;
+  while (diff > Math.PI) diff -= 2 * Math.PI;
+  while (diff < -Math.PI) diff += 2 * Math.PI;
+  const steer = diff > 0.1 ? 1 : (diff < -0.1 ? -1 : 0);
+  const thr = dist > 420 ? 1 : (dist < 290 ? -0.6 : 0.65);
+  // 简单避障：前方三方向 110px 采样 + 世界边界
+  let blocked = false;
+  for (const o of room.obstacles) {
+    for (const off of [0, -0.4, 0.4]) {
+      const cx = tk.x + Math.cos(tk.a + off) * 110;
+      const cy = tk.y + Math.sin(tk.a + off) * 110;
+      if (cx > o.x && cx < o.x + o.w && cy > o.y && cy < o.y + o.h) { blocked = true; break; }
+    }
+    if (blocked) break;
+  }
+  if (!blocked && (tk.x < WALL_T + 70 || tk.x > WORLD.w - WALL_T - 70 || tk.y < WALL_T + 70 || tk.y > WORLD.h - WALL_T - 70)) blocked = true;
+  if (blocked) {
+    p.input = { thr: 0.4, steer: Math.random() < 0.5 ? 1 : -1, ta: ang, shoot: false, boost: false };
+    return;
+  }
+  // 炮塔瞄准目标，指向足够准且装填完成时开火
+  let taDiff = ang - tk.ta;
+  while (taDiff > Math.PI) taDiff -= 2 * Math.PI;
+  while (taDiff < -Math.PI) taDiff += 2 * Math.PI;
+  const shoot = p.mag > 0 && Math.abs(taDiff) < 0.12 && dist < 750;
+  p.input = { thr, steer, ta: ang, shoot, boost: false };
+}
+
 function removePlayer(room, p) {
   room.players.delete(p.id);
   if (p.conn) p.conn.player = null;
   if (room.hostId === p.id) {
-    const first = [...room.players.values()][0];
+    const first = [...room.players.values()].find((q) => !q.isBot) || [...room.players.values()][0];
     room.hostId = first ? first.id : null;
   }
   room.pendingEvents.push({ k: 'leave', name: p.name });
-  if (room.players.size === 0) { rooms.delete(room.code); return; }
+  // 无真人玩家时关闭房间（单人模式玩家离开即结束）
+  const hasHuman = [...room.players.values()].some((q) => !q.isBot);
+  if (!hasHuman) { rooms.delete(room.code); return; }
   broadcastRoom(room);
   broadcast(room);
 }
@@ -402,6 +469,7 @@ function sim(room, dt, now) {
   // ---- 坦克移动 / 开火 ----
   for (const p of alive) {
     const tk = p.tank;
+    if (p.isBot) botThink(p, room); // AI 玩家：每 tick 生成行为输入
     const inp = p.input;
     p.fireCd -= dt;
     const rapid = p.rapid > 0; p.rapid -= dt;
@@ -614,11 +682,14 @@ function sim(room, dt, now) {
             // 部位判定：命中点在车体的前后/侧面位置（与贴图视觉一致）
             const zone = rx > TANK.l * 0.12 ? 'front' : (rx < -TANK.l * 0.12 ? 'back' : 'side');
             const dmg = zone === 'front' ? 20 : (zone === 'back' ? 40 : 30); // 部位基础伤害
+            const eraBefore = q.era; // 命中前爆反血量（俄军侧面殉爆屏蔽按命中前判定）
             // 弹药架弱点区域（按型号设计，贴图对应位置）：击中必殉爆
             // 美军：炮塔尾舱（车体后部偏窄区域，精细判定）；俄军：侧面中心
+            // 俄军爆反不低于 30% 时，侧面命中（含弹药架区域）不触发殉爆
+            const ruSideSafe = q.type === 'ru' && eraBefore >= tt.era * 0.3;
             const ammoHit = tt.ammoZone === 'rear'
               ? (rx < -13 && Math.abs(ry) < 13)   // 美军：炮塔尾舱（车体后部中央偏窄）
-              : (Math.abs(ry) > 17 && Math.abs(rx) < 13); // 俄军：侧面中心（收窄区域，减少随机命中殉爆）
+              : (Math.abs(ry) > 17 && Math.abs(rx) < 13 && !ruSideSafe); // 俄军：侧面中心（爆反≥30%不殉爆）
             if (ammoHit) {
               // 弹药架殉爆：先起火再殉爆（起火视觉效果），立即击毁（弱点命中无视反应装甲）
               q.fireT = FIRE_TIME;
@@ -633,7 +704,6 @@ function sim(room, dt, now) {
               }
               room.pendingEvents.push({ k: 'boom', x: Math.round(t2.x), y: Math.round(t2.y) });
             } else {
-              // 爆反血条：任何命中先扣 伤害/2（至少 1），扣完失效、装甲回基础值
               // 爆反血条：本回合首次被命中扣 40-70 随机，之后每次扣 20-40 随机
               const eraFirstHit = !q.eraHit; // 本回合是否首次被命中
               q.eraHit = true;
@@ -650,17 +720,18 @@ function sim(room, dt, now) {
                 q.parts[pick] = false;
                 brokenParts.push(pick);
               };
+              // 美军机制：爆反不满血时，正面被击中（任何结果）50% 坏炮塔
+              if (q.type === 'us' && zone === 'front' && q.era < tt.era && q.parts.turret && Math.random() < 0.5) {
+                q.parts.turret = false;
+                brokenParts.push('turret');
+              }
               if (ratio >= 1.0) {
                 // 完全击穿：全伤害 + 随机其他部位模块 + 起火/殉爆概率
                 t2.hp -= dmg;
                 q.lastHitBy = b.ownerId;
-                // 随机损坏一个模块（美军无装弹机，排除 loader；美军正面易坏炮塔作为后方弹药架弱点的平衡）
+                // 随机损坏一个模块（美军无装弹机，排除 loader；美军侧面击穿 40% 优先坏炮塔）
                 let avail = PARTS_LIST.filter((n) => q.parts[n] && (q.type === 'ru' || n !== 'loader'));
-                if (q.type === 'us' && zone === 'front' && q.parts.turret && Math.random() < 0.75) {
-                  // 美军正面：75% 坏炮塔
-                  q.parts.turret = false;
-                  brokenParts.push('turret');
-                } else if (q.type === 'us' && zone === 'side' && q.parts.turret && Math.random() < 0.4) {
+                if (q.type === 'us' && zone === 'side' && q.parts.turret && Math.random() < 0.4) {
                   // 美军侧面击穿：40% 优先坏炮塔（侧面不再只坏无关紧要的模块）
                   q.parts.turret = false;
                   brokenParts.push('turret');
@@ -678,8 +749,9 @@ function sim(room, dt, now) {
                   q.fireDmg = 0;
                   room.pendingEvents.push({ k: 'fire', id: q.id, x: Math.round(t2.x), y: Math.round(t2.y) });
                 }
-                // 殉爆（非弱点区域）：反应装甲失效后概率提升；侧面概率降低（俄军侧面不再一击必殉爆）
-                const detChance = q.era > 0 ? (zone === 'side' ? 0.03 : zone === 'back' ? 0.1 : 0) : (zone === 'side' ? 0.15 : zone === 'back' ? 0.4 : 0);
+                // 殉爆（非弱点区域）：俄军爆反≥30%时侧面不殉爆；其余按爆反状态与部位
+                let detChance = zone === 'side' ? (q.era > 0 ? 0.03 : 0.15) : (zone === 'back' ? (q.era > 0 ? 0.1 : 0.4) : 0);
+                if (q.type === 'ru' && zone === 'side' && eraBefore >= tt.era * 0.3) detChance = 0; // 俄军爆反保护
                 if (zone !== 'front' && Math.random() < detChance) {
                   q.alive = false;
                   q.deadAt = now;
@@ -709,9 +781,8 @@ function sim(room, dt, now) {
                     // 俄军正面：只可能坏履带或装弹机
                     breakOne(['track', 'loader']);
                   } else {
-                    // 美军正面：炮塔优先，履带其次
-                    if (Math.random() < 0.7) breakOne(['turret']);
-                    else breakOne(['track']);
+                    // 美军正面：炮塔损坏由统一机制（爆反不满血 50%）处理，未触发则只坏履带
+                    breakOne(['track']);
                   }
                 } else if (zone === 'back') {
                   // 背面：起火 或 发动机损坏（通用）
@@ -1016,7 +1087,14 @@ function onMessage(conn, buf) {
         }
       }
       if (room) addPlayer(room, conn, name);
-      else makeRoom(conn, name);
+      else {
+        makeRoom(conn, name);
+        // 单人模式：建房后自动添加 AI 对手
+        if (msg.solo) {
+          const rm = conn.player.room;
+          if (rm) addBot(rm, 'AI 坦克');
+        }
+      }
       break;
     }
     case 'input': {
@@ -1048,6 +1126,13 @@ function onMessage(conn, buf) {
       if (msg.type === 'us' || msg.type === 'ru') {
         p.type = msg.type;
         p.era = initialEra(msg.type);
+        // 单人模式：AI 自动选择与玩家相反的型号
+        for (const q of p.room.players.values()) {
+          if (q.isBot && q.type === msg.type) {
+            q.type = msg.type === 'us' ? 'ru' : 'us';
+            q.era = initialEra(q.type);
+          }
+        }
         broadcastRoom(p.room);
       }
       break;
