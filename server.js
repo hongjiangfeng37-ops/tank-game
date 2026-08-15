@@ -60,7 +60,7 @@ const TANK = { r: 22, l: 52, w: 44, accel: 340, turn: 3.2, dragF: 0.9, dragL: 3.
 // 装甲厚度：armor 基础 / armorEra 爆反生效时；穿深：pen 初始，每次反弹扣 penDrop，扣完消失
 const TANK_TYPES = {
   us: {
-    name: '美军 M1A2', maxSpeed: 270, back: 0.8, reload: 4,
+    name: '美军 M1A1标题党', maxSpeed: 270, back: 0.8, reload: 4,
     era: 300,                                        // 爆反血量（命中伤害/2 扣除，扣完失效）
     armor: { front: 600, side: 200, back: 400 },     // 基础装甲
     armorEra: { front: 900, side: 800, back: 400 },  // 爆反生效时装甲（背面不变）
@@ -69,7 +69,7 @@ const TANK_TYPES = {
     hasLoader: false,
   },
   ru: {
-    name: '俄军 T90M', maxSpeed: 205, back: 0.35, reload: 6,
+    name: '俄军 T80U', maxSpeed: 205, back: 0.35, reload: 6,
     era: 500,                                       // 爆反血量（俄军比美军多 200：300+200）
     armor: { front: 800, side: 250, back: 700 },    // 侧面基础装甲 150→250（爆反耗尽后不纸糊）
     armorEra: { front: 1200, side: 1050, back: 700 },  // 爆反侧面额外防护 +800（250→1050）
@@ -333,7 +333,7 @@ function addBot(room, name) {
   return p;
 }
 
-// AI 行为：接近/绕圈目标、炮塔瞄准、装填好即开火、简单避障
+// AI 行为：接近/绕圈目标、炮塔瞄准、装填好即开火、鲁棒避障（前方探测+左右选择+倒车脱困）
 function botThink(p, room) {
   const tk = p.tank;
   let target = null;
@@ -353,22 +353,34 @@ function botThink(p, room) {
   while (diff > Math.PI) diff -= 2 * Math.PI;
   while (diff < -Math.PI) diff += 2 * Math.PI;
   const steer = diff > 0.1 ? 1 : (diff < -0.1 ? -1 : 0);
-  const thr = dist > 420 ? 1 : (dist < 290 ? -0.6 : 0.65);
-  // 简单避障：前方三方向 110px 采样 + 世界边界
-  let blocked = false;
-  for (const o of room.obstacles) {
-    for (const off of [0, -0.4, 0.4]) {
-      const cx = tk.x + Math.cos(tk.a + off) * 110;
-      const cy = tk.y + Math.sin(tk.a + off) * 110;
-      if (cx > o.x && cx < o.x + o.w && cy > o.y && cy < o.y + o.h) { blocked = true; break; }
+
+  // 避障探测：前方与左右 110px 采样 + 世界边界
+  const sampleBlocked = (angOff) => {
+    const cx = tk.x + Math.cos(tk.a + angOff) * 110;
+    const cy = tk.y + Math.sin(tk.a + angOff) * 110;
+    for (const o of room.obstacles) {
+      if (cx > o.x && cx < o.x + o.w && cy > o.y && cy < o.y + o.h) return true;
     }
-    if (blocked) break;
-  }
-  if (!blocked && (tk.x < WALL_T + 70 || tk.x > WORLD.w - WALL_T - 70 || tk.y < WALL_T + 70 || tk.y > WORLD.h - WALL_T - 70)) blocked = true;
-  if (blocked) {
-    p.input = { thr: 0.4, steer: Math.random() < 0.5 ? 1 : -1, ta: ang, shoot: false, boost: false };
+    return false;
+  };
+  const nearWall = tk.x < WALL_T + 80 || tk.x > WORLD.w - WALL_T - 80 || tk.y < WALL_T + 80 || tk.y > WORLD.h - WALL_T - 80;
+  if (sampleBlocked(0) || nearWall) {
+    const leftBlocked = sampleBlocked(-0.6);
+    const rightBlocked = sampleBlocked(0.6);
+    if (leftBlocked && rightBlocked) {
+      // 左右都堵（墙角/通道尽头）：倒车脱困
+      p.input = { thr: -1, steer: 0, ta: ang, shoot: false, boost: false };
+    } else if (leftBlocked) {
+      p.input = { thr: 0.5, steer: 1, ta: ang, shoot: false, boost: false };
+    } else if (rightBlocked) {
+      p.input = { thr: 0.5, steer: -1, ta: ang, shoot: false, boost: false };
+    } else {
+      p.input = { thr: 0.4, steer: Math.random() < 0.5 ? 1 : -1, ta: ang, shoot: false, boost: false };
+    }
     return;
   }
+  // 转向幅度大时停车转向（避免边转边撞墙）
+  const thr = Math.abs(diff) > 0.7 ? 0 : (dist > 420 ? 1 : (dist < 290 ? -0.6 : 0.65));
   // 炮塔瞄准目标，指向足够准且装填完成时开火
   let taDiff = ang - tk.ta;
   while (taDiff > Math.PI) taDiff -= 2 * Math.PI;
