@@ -935,10 +935,11 @@
   };
   const TANK_IMAGES = {};
   (function loadTankImages() {
+    // TANK_SVG 内为完整 data URI（PNG 贴图），直接作为图片源加载
     for (const k of Object.keys(TANK_SVG)) {
       const img = new Image();
       img.onload = () => { TANK_IMAGES[k] = img; };
-      img.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(TANK_SVG[k]);
+      img.src = TANK_SVG[k];
     }
   })();
 
