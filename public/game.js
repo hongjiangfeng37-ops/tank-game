@@ -956,10 +956,9 @@
     ctx.rotate(t.a);
     const bodyImg = t.ty === 'ru' ? TANK_IMAGES.ruBody : TANK_IMAGES.usBody;
     if (bodyImg) {
-      // 贴图按真实比例缩放（宽 52 对齐碰撞盒长度，高度按比例）
-      const s = 0.5; // 贴图为 2x 分辨率，绘制缩小
+      // 车体铺满碰撞盒 52x44（大小与原版一致，像素画拉伸可接受）
       ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(bodyImg, -bodyImg.width * s / 2, -bodyImg.height * s / 2, bodyImg.width * s, bodyImg.height * s);
+      ctx.drawImage(bodyImg, -26, -22, 52, 44);
     } else {
       ctx.fillStyle = color;
       rr(-25, -13, 50, 26, 6); ctx.fill();
