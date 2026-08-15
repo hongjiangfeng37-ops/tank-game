@@ -1040,27 +1040,30 @@
       '<circle cx="94.5" cy="25" r="1.7" fill="#ffe9a3"/>' +
       '<circle cx="94.5" cy="53" r="1.7" fill="#ffe9a3"/>' +
       '</svg>',
-    // 俄军炮塔：分层结构（主体圆→满铺爆反层→中心凸台→大舱盖→设备），爆反按圆形裁剪贴合边缘
+    // 俄军炮塔：分层结构（外圈亮边+边缘环带→满铺爆反层→中心凸台→大舱盖→设备），爆反按圆形裁剪
     ruTurret: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 52">' +
       '<defs>' +
       '<linearGradient id="rutg" x1="0" y1="0" x2="0" y2="1">' +
       '<stop offset="0" stop-color="#6f8356"/><stop offset="1" stop-color="#44533a"/>' +
       '</linearGradient>' +
-      // 爆反块立体渐变（上亮下暗，凸起感）
-      '<linearGradient id="eraG" x1="0" y1="0" x2="0" y2="1">' +
-      '<stop offset="0" stop-color="#6a7f4e"/><stop offset="1" stop-color="#3f4e2c"/>' +
+      // 爆反块立体渐变（左上亮右下暗，斜向凸起感）
+      '<linearGradient id="eraG" x1="0" y1="0" x2="1" y2="1">' +
+      '<stop offset="0" stop-color="#74894f"/><stop offset="1" stop-color="#394a28"/>' +
       '</linearGradient>' +
       // 舱盖凸台渐变
       '<linearGradient id="hatchG" x1="0" y1="0" x2="0" y2="1">' +
       '<stop offset="0" stop-color="#5c6e47"/><stop offset="1" stop-color="#39462a"/>' +
       '</linearGradient>' +
       // 圆形裁剪：边缘爆反被裁成圆弧，贴合圆炮塔轮廓
-      '<clipPath id="ruclip"><circle cx="27" cy="26" r="18.3"/></clipPath>' +
+      '<clipPath id="ruclip"><circle cx="27" cy="26" r="17.6"/></clipPath>' +
       '</defs>' +
-      // 第1层：主体大圆
+      // 第0层：主体大圆 + 外圈亮边（受光边缘）
       '<circle cx="27" cy="26" r="19" fill="url(#rutg)" stroke="#1b2214" stroke-width="1.7"/>' +
-      '<circle cx="27" cy="26" r="16.5" fill="none" stroke="#131a0e" stroke-width="0.8" opacity="0.5"/>' +
-      // 第2层：爆反块层（4x4 大块，渐变立体，裁剪成圆）
+      '<circle cx="27" cy="26" r="18.55" fill="none" stroke="#8aa06e" stroke-width="0.8" opacity="0.45"/>' +
+      // 第0.5层：边缘环带（爆反裁剪后露出的主体色环）+ 虚线装甲接缝
+      '<circle cx="27" cy="26" r="17.9" fill="none" stroke="#131a0e" stroke-width="0.8" stroke-dasharray="2.2 2.2" opacity="0.8"/>' +
+      '<circle cx="27" cy="26" r="16.9" fill="none" stroke="#131a0e" stroke-width="0.7" opacity="0.5"/>' +
+      // 第1层：爆反块层（4x4 大块，斜向渐变立体，裁剪成圆）
       '<g clip-path="url(#ruclip)">' +
       '<rect x="9.5" y="9.5" width="8" height="8" fill="url(#eraG)" stroke="#1c2415" stroke-width="1.1"/>' +
       '<rect x="18.5" y="9.5" width="8" height="8" fill="url(#eraG)" stroke="#1c2415" stroke-width="1.1"/>' +
@@ -1711,6 +1714,8 @@
       let hitTank = false;
       for (const p of players.values()) {
         if (!p.render) continue;
+        // 出生保护：出膛 200ms 内不判定命中自己（斜射时炮口投影会落入命中框，否则斜射吞炮弹）
+        if (p.id === myId && performance.now() - pb.t < 200) continue;
         const r = p.render;
         const dx = r.x - pb.x, dy = r.y - pb.y;
         const fwx = Math.cos(r.a), fwy = Math.sin(r.a);
