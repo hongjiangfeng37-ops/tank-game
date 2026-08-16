@@ -334,26 +334,36 @@ function addBot(room, name) {
   return p;
 }
 
-// AI 行为：接近/绕圈目标、炮塔瞄准、装填好即开火、鲁棒避障（前方探测+左右选择+倒车脱困）
-function botThink(p, room) {
+// AI 行为：智能战斗（状态机）——身法摆角 + 弹道规避 + 侧翼包抄打击弱点 + 墙角反弹射击 + 道具拾取 + 撤退维修
+// 目标是难以战胜：精准提前量射击、机动规避、绕到玩家侧后打弱点、被打坏了会拉开距离修车再战
+function botThink(p, room, dt) {
   const tk = p.tank;
+  const ai = p.ai || (p.ai = {
+    mode: 'combat', strafeT: Math.random() * 2, flankDir: 1, flankT: 1,
+    dodgeDir: 1, evadeT: 0, shootT: 0, thinkT: 0,
+  });
+  ai.strafeT += dt;
+  ai.shootT -= dt;
+  ai.evadeT -= dt;
+  ai.flankT -= dt;
+  ai.thinkT -= dt;
+  if (ai.flankT <= 0) { ai.flankT = 1.4 + Math.random() * 1.3; ai.flankDir = Math.random() < 0.5 ? 1 : -1; }
+
+  // 目标：优先真人，否则其他 bot
   let target = null;
-  for (const q of room.players.values()) {
-    if (!q.isBot && q.alive && q.tank) { target = q; break; }
-  }
+  for (const q of room.players.values()) if (!q.isBot && q.alive && q.tank) { target = q; break; }
+  if (!target) for (const q of room.players.values()) if (q.id !== p.id && q.alive && q.tank) { target = q; break; }
   if (!target) { p.input = { thr: 0, steer: 0, ta: tk.ta, shoot: false, boost: false }; return; }
   const tt = target.tank;
   const dx = tt.x - tk.x, dy = tt.y - tk.y;
   const dist = Math.hypot(dx, dy);
-  const ang = Math.atan2(dy, dx);
-  let desired = ang;
-  if (dist < 270) desired = ang + Math.PI;   // 过近：掉头拉开
-  else if (dist > 480) desired = ang;        // 过远：接近
-  else desired = ang + 0.7;                  // 中距离：绕圈机动
-  let diff = desired - tk.a;
-  while (diff > Math.PI) diff -= 2 * Math.PI;
-  while (diff < -Math.PI) diff += 2 * Math.PI;
-  const steer = diff > 0.1 ? 1 : (diff < -0.1 ? -1 : 0);
+  const angTo = Math.atan2(dy, dx);
+  const angDiff = (a) => { let d = a - tk.a; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; };
+
+  const parts = p.parts;
+  const brokenCount = PARTS_LIST.filter((n) => !parts[n]).length;
+  const lowHp = tk.hp < 50;
+  const needRepair = brokenCount > 0 && (brokenCount >= 2 || (lowHp && brokenCount > 0));
 
   // 避障探测：前方与左右 110px 采样 + 世界边界
   const sampleBlocked = (angOff) => {
@@ -365,29 +375,172 @@ function botThink(p, room) {
     return false;
   };
   const nearWall = tk.x < WALL_T + 80 || tk.x > WORLD.w - WALL_T - 80 || tk.y < WALL_T + 80 || tk.y > WORLD.h - WALL_T - 80;
+
+  // ---- 撤退维修状态：拉开距离停车修车（修好再战） ----
+  if (ai.mode === 'repair') {
+    if (brokenCount === 0) { ai.mode = 'combat'; }
+    else {
+      if (dist < 400) {
+        // 玩家逼近：先跑（避开玩家方向，带避障）
+        const away = angTo + Math.PI;
+        let st = 0;
+        const dd = angDiff(away);
+        st = dd > 0.15 ? 1 : (dd < -0.15 ? -1 : 0);
+        p.input = { thr: 1, steer: st, ta: angTo, shoot: false, boost: true };
+      } else if (dist > 560) {
+        // 安全距离：完全静止修车（炮塔仍指向玩家防御）
+        p.input = { thr: 0, steer: 0, ta: angTo, shoot: false, boost: false };
+      } else {
+        // 不够远：继续拉开
+        const away = angTo + Math.PI;
+        let st = 0;
+        const dd = angDiff(away);
+        st = dd > 0.15 ? 1 : (dd < -0.15 ? -1 : 0);
+        p.input = { thr: 1, steer: st, ta: angTo, shoot: false, boost: false };
+      }
+      return;
+    }
+  }
+  if (needRepair && dist < 480) ai.mode = 'repair';
+
+  // ---- 威胁检测：目标发射、正朝本 bot 飞来的炮弹 ----
+  let threat = null;
+  for (const b of room.bullets) {
+    if (b.ownerId !== target.id) continue;
+    const bx = b.x - tk.x, by = b.y - tk.y;
+    const bd = Math.hypot(bx, by);
+    if (bd > 300 || bd < 10) continue;
+    const spd = Math.hypot(b.vx, b.vy) || 1;
+    const dot = (b.vx * -bx + b.vy * -by) / (spd * bd);
+    if (dot > 0.82) { threat = b; break; }
+  }
+  if (threat && ai.evadeT <= 0) {
+    ai.evadeT = 0.38; // 闪避 0.38s
+    const cross = threat.vx * (tk.y - threat.y) - threat.vy * (tk.x - threat.x);
+    ai.dodgeDir = cross > 0 ? 1 : -1;
+  }
+  const evading = ai.evadeT > 0;
+
+  // ---- 反弹射击：玩家贴墙时找世界墙反射路径（先手打击，弹射命中） ----
+  let bankAim = null;
+  if (!evading && dist > 150 && dist < 920 && ai.thinkT <= 0) {
+    ai.thinkT = 0.15;
+    const walls = [
+      { vert: true, val: WALL_T }, { vert: true, val: WORLD.w - WALL_T },
+      { vert: false, val: WALL_T }, { vert: false, val: WORLD.h - WALL_T },
+    ];
+    for (const w of walls) {
+      const pd = w.vert ? Math.abs(tt.x - w.val) : Math.abs(tt.y - w.val);
+      if (pd > 150) continue;
+      const mx = w.vert ? 2 * w.val - tt.x : tt.x;
+      const my = w.vert ? tt.y : 2 * w.val - tt.y;
+      let ix, iy;
+      if (w.vert) {
+        if (Math.abs(mx - tk.x) < 1) continue;
+        const t = (w.val - tk.x) / (mx - tk.x);
+        if (t <= 0.04 || t >= 0.96) continue;
+        iy = tk.y + t * (my - tk.y);
+        if (iy < WALL_T + 40 || iy > WORLD.h - WALL_T - 40) continue;
+        ix = w.val;
+      } else {
+        if (Math.abs(my - tk.y) < 1) continue;
+        const t = (w.val - tk.y) / (my - tk.y);
+        if (t <= 0.04 || t >= 0.96) continue;
+        ix = tk.x + t * (mx - tk.x);
+        if (ix < WALL_T + 40 || ix > WORLD.w - WALL_T - 40) continue;
+        iy = w.val;
+      }
+      let clear = true;
+      for (const o of room.obstacles) {
+        if (segRectHit(tk.x, tk.y, ix, iy, o) || segRectHit(ix, iy, tt.x, tt.y, o)) { clear = false; break; }
+      }
+      if (clear) { bankAim = Math.atan2(my - tk.y, mx - tk.x); break; }
+    }
+  }
+
+  // ---- 瞄准：提前量预测（按炮弹飞行时间）+ 开火 ----
+  const lead = Math.min(0.6, dist / 620 * 0.92);
+  const aimX = tt.x + tt.vx * lead, aimY = tt.y + tt.vy * lead;
+  const baseAim = Math.atan2(aimY - tk.y, aimX - tk.x);
+  const aim = bankAim !== null ? bankAim : baseAim;
+  let taDiff = aim - tk.ta;
+  while (taDiff > Math.PI) taDiff -= 2 * Math.PI;
+  while (taDiff < -Math.PI) taDiff += 2 * Math.PI;
+  // 弱点位判定：bot 是否位于玩家侧后方（玩家车头坐标系投影）
+  const fwdx = Math.cos(tt.a), fwdy = Math.sin(tt.a);
+  const px = fwdx * (tk.x - tt.x) + fwdy * (tk.y - tt.y);
+  const py = -fwdx * (tk.y - tt.y) + fwdy * (tk.x - tt.x);
+  const behind = px < -18;
+  const sidePos = Math.abs(py) > 20;
+  const inWeak = behind || sidePos;
+  const aimOk = Math.abs(taDiff) < (inWeak ? 0.1 : 0.055);
+  const shoot = p.mag > 0 && aimOk && dist < 820 && ai.shootT <= 0;
+  if (shoot) ai.shootT = 0.24;
+
+  // ---- 车体机动（身法：摆角蛇形 + 弹道闪避 + 侧翼包抄 + 距离控制） ----
+  let desired, thr;
+  if (evading) {
+    // 弹道闪避：朝垂直方向猛冲（boost 加速）
+    desired = angTo + ai.dodgeDir * Math.PI / 2 + (Math.random() - 0.5) * 0.35;
+    thr = 1;
+  } else if (inWeak && dist > 150 && dist < 520) {
+    // 已在侧后：保持位置绕行压制（摆角维持正面威慑）
+    desired = angTo + Math.sin(ai.strafeT * 2.3) * 0.3;
+    thr = dist > 250 ? 0.7 : (dist < 195 ? -0.5 : 0.3);
+  } else if (dist > 540) {
+    // 过远：接近（蛇形摆角，减少直线上被命中）
+    desired = angTo + Math.sin(ai.strafeT * 1.7) * 0.26;
+    thr = 1;
+  } else if (dist < 195) {
+    // 过近：倒车拉开保持正面（摆角）
+    desired = angTo + Math.sin(ai.strafeT * 2.1) * 0.3;
+    thr = -0.78;
+  } else {
+    // 中距离：侧翼包抄——绕行到玩家侧面/后方（打弱点部位）
+    desired = angTo + ai.flankDir * 1.05;
+    thr = 0.82;
+  }
+  const diff = angDiff(desired);
+  const steer = diff > 0.12 ? 1 : (diff < -0.12 ? -1 : 0);
+  const turnThr = Math.abs(diff) > 1.2 ? 0.25 : thr;
+
+  // 避障：前方阻塞（含绕行时）→ 绕行/倒车脱困（炮塔保持瞄准）
   if (sampleBlocked(0) || nearWall) {
     const leftBlocked = sampleBlocked(-0.6);
     const rightBlocked = sampleBlocked(0.6);
-    if (leftBlocked && rightBlocked) {
-      // 左右都堵（墙角/通道尽头）：倒车脱困
-      p.input = { thr: -1, steer: 0, ta: ang, shoot: false, boost: false };
-    } else if (leftBlocked) {
-      p.input = { thr: 0.5, steer: 1, ta: ang, shoot: false, boost: false };
-    } else if (rightBlocked) {
-      p.input = { thr: 0.5, steer: -1, ta: ang, shoot: false, boost: false };
-    } else {
-      p.input = { thr: 0.4, steer: Math.random() < 0.5 ? 1 : -1, ta: ang, shoot: false, boost: false };
-    }
+    let st, th;
+    if (leftBlocked && rightBlocked) { st = 0; th = -1; }
+    else if (leftBlocked) { st = 1; th = 0.55; }
+    else if (rightBlocked) { st = -1; th = 0.55; }
+    else { st = Math.random() < 0.5 ? 1 : -1; th = 0.4; }
+    p.input = { thr: th, steer: st, ta: aim, shoot, boost: false };
     return;
   }
-  // 转向幅度大时停车转向（避免边转边撞墙）
-  const thr = Math.abs(diff) > 0.7 ? 0 : (dist > 420 ? 1 : (dist < 290 ? -0.6 : 0.65));
-  // 炮塔瞄准目标，指向足够准且装填完成时开火
-  let taDiff = ang - tk.ta;
-  while (taDiff > Math.PI) taDiff -= 2 * Math.PI;
-  while (taDiff < -Math.PI) taDiff += 2 * Math.PI;
-  const shoot = p.mag > 0 && Math.abs(taDiff) < 0.12 && dist < 750;
-  p.input = { thr, steer, ta: ang, shoot, boost: false };
+
+  // ---- 道具拾取：低血时优先血包；顺路捡 rapid/triple/shield ----
+  let pupTarget = null;
+  if (tk.hp < 78) {
+    for (const pu of room.pups) {
+      if (pu.type !== 'health') continue;
+      const pdd = Math.hypot(pu.x - tk.x, pu.y - tk.y);
+      if (pdd < 400 && (pupTarget === null || pdd < pupTarget.d)) pupTarget = { x: pu.x, y: pu.y, d: pdd };
+    }
+  }
+  if (!pupTarget) {
+    for (const pu of room.pups) {
+      if (pu.type !== 'rapid' && pu.type !== 'triple' && pu.type !== 'shield') continue;
+      const pdd = Math.hypot(pu.x - tk.x, pu.y - tk.y);
+      if (pdd < 250 && (pupTarget === null || pdd < pupTarget.d)) pupTarget = { x: pu.x, y: pu.y, d: pdd };
+    }
+  }
+  if (pupTarget && !evading && dist > 130) {
+    const pupAng = Math.atan2(pupTarget.y - tk.y, pupTarget.x - tk.x);
+    const st2 = angDiff(pupAng) > 0.12 ? 1 : -1;
+    p.input = { thr: 1, steer: st2, ta: aim, shoot, boost: false };
+    return;
+  }
+
+  p.input = { thr: turnThr, steer, ta: aim, shoot, boost: evading };
 }
 
 function removePlayer(room, p) {
@@ -502,7 +655,7 @@ function sim(room, dt, now) {
   // ---- 坦克移动 / 开火 ----
   for (const p of alive) {
     const tk = p.tank;
-    if (p.isBot) botThink(p, room); // AI 玩家：每 tick 生成行为输入
+    if (p.isBot) botThink(p, room, dt); // AI 玩家：每 tick 生成行为输入（智能战斗 AI）
     const inp = p.input;
     p.fireCd -= dt;
     const rapid = p.rapid > 0; p.rapid -= dt;
