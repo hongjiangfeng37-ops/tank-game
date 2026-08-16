@@ -284,6 +284,7 @@ body.touch #btnLayoutGame { display: flex; }
 
 /* ---------- 布局设置 ---------- */
 #btnLayout { margin-top: 4px; }
+.ver { margin-top: 10px; font-size: 11px; color: #5d6f92; }
 #layoutPanel {
   position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 60;
   background: rgba(10, 15, 28, 0.94); border: 1px solid #2a3a5c; border-radius: 12px;
