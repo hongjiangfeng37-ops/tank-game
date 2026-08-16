@@ -2176,6 +2176,67 @@
   if (btnLayoutGame) btnLayoutGame.addEventListener('click', enterLayoutEdit);
   applyLayout();
 
+  // 布局设置自测（?layouttest=1 时运行，输出到 #layoutTestOut，供 headless 验证）
+  if (typeof URLSearchParams !== 'undefined' && new URLSearchParams(location.search).get('layouttest') === '1') {
+    setTimeout(() => {
+      const res = [];
+      const ok = (n, c, e) => res.push((c ? 'PASS ' : 'FAIL ') + n + (e ? ' -- ' + e : ''));
+      try {
+        const btn = document.getElementById('btnLayout');
+        const panel = document.getElementById('layoutPanel');
+        ok('布局按钮存在', !!btn);
+        btn.click();
+        ok('进入编辑模式', document.body.classList.contains('layout-edit'));
+        ok('面板显示', panel && !panel.classList.contains('hidden'));
+        const selMap = document.querySelector('.lpSel[data-lp="map"]');
+        selMap.click();
+        ok('选中小地图', layoutSel === 'map');
+        const sizeEl = document.getElementById('lpSize');
+        sizeEl.value = '100';
+        sizeEl.dispatchEvent(new Event('input'));
+        ok('滑块调大小生效', layout.map.s === 100);
+        const mmEl = document.getElementById('minimap');
+        ok('小地图尺寸应用', mmEl.style.width === '100px', mmEl.style.width);
+        document.getElementById('lpSave').click();
+        const saved = JSON.parse(localStorage.getItem('tank.gameLayout.v1'));
+        ok('保存到 localStorage', !!saved && saved.map && saved.map.s === 100);
+        btn.click();
+        document.querySelector('.lpSel[data-lp="map"]').click();
+        document.getElementById('lpReset').click();
+        ok('恢复默认', layout.map.s === 78 && layout.dpad.s === 54);
+        document.getElementById('lpClose').click();
+        ok('关闭面板', panel.classList.contains('hidden'));
+        ok('退出编辑模式', !document.body.classList.contains('layout-edit'));
+        // 模拟拖动小地图（pointer 事件）
+        btn.click();
+        document.querySelector('.lpSel[data-lp="map"]').click();
+        const mmEl2 = document.getElementById('minimap');
+        const rr = mmEl2.getBoundingClientRect();
+        const beforeR = layout.map.r, beforeT = layout.map.t;
+        if (typeof PointerEvent !== 'undefined') {
+          document.dispatchEvent(new PointerEvent('pointerdown', { clientX: rr.left + 10, clientY: rr.top + 10, pointerId: 7, bubbles: true, cancelable: true }));
+          document.dispatchEvent(new PointerEvent('pointermove', { clientX: rr.left + 140, clientY: rr.top + 80, pointerId: 7, bubbles: true, cancelable: true }));
+          document.dispatchEvent(new PointerEvent('pointerup', { pointerId: 7, bubbles: true, cancelable: true }));
+          ok('拖动改变小地图位置', layout.map.r !== beforeR || layout.map.t !== beforeT, 'r=' + layout.map.r + ' t=' + layout.map.t);
+        } else {
+          ok('PointerEvent 可用', false, 'unsupported');
+        }
+        document.getElementById('lpClose').click();
+      } catch (e) { res.push('FAIL exception -- ' + e.message); }
+      const out = document.createElement('pre');
+      out.id = 'layoutTestOut';
+      out.textContent = res.join('\n') + '\n' + (res.every((r) => r.startsWith('PASS')) ? 'ALL PASS' : 'HAS FAILURES');
+      document.body.appendChild(out);
+      try {
+        fetch('http://127.0.0.1:8125/report', {
+          method: 'POST', mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify({ layout: res.join('|'), pass: res.every((r) => r.startsWith('PASS')) }),
+        }).catch(() => {});
+      } catch (e) {}
+    }, 600);
+  }
+
   // ---------------- 启动 ----------------
   showMenu();
   resize();
