@@ -70,6 +70,28 @@
     <p><b>操作：</b>WASD / 方向键 移动 · 鼠标 瞄准 · 左键 / 空格 开火 · Shift 加速 · M 静音</p>
     <p><b>玩法：</b>炮弹可反弹 3 次，捡道具强化自己，坚持到最后获胜！</p>
   </div>
+  <div class="row"><button id="btnLayout" class="mini">⚙️ 布局设置（按键/小地图）</button></div>
+</div>
+
+<!-- 布局设置面板（拖动按键/小地图调整位置，滑块调大小） -->
+<div id="layoutPanel" class="hidden">
+  <div class="lpTitle">🎛️ 布局设置 <span class="lpSub">拖动控件调整位置 · 点选后滑块调大小</span></div>
+  <div class="lpRow">
+    <button class="mini lpSel" data-lp="dpad">十字键</button>
+    <button class="mini lpSel" data-lp="fire">开火键</button>
+    <button class="mini lpSel" data-lp="boost">加速键</button>
+    <button class="mini lpSel" data-lp="map">小地图</button>
+  </div>
+  <div class="lpRow lpSizeRow">
+    <span>大小</span>
+    <input type="range" id="lpSize" min="40" max="150" value="54">
+    <span id="lpSizeVal">54</span>
+  </div>
+  <div class="lpRow">
+    <button class="mini" id="lpSave">💾 保存</button>
+    <button class="mini" id="lpReset">↺ 恢复默认</button>
+    <button class="mini" id="lpClose">关闭</button>
+  </div>
 </div>
 
 <!-- 大厅 -->
@@ -112,6 +134,7 @@
 </div>
 <button id="btnFire" title="开火">🔥</button>
 <div id="boostBtn">加速</div>
+<button id="btnLayoutGame" title="布局设置">⚙️</button>
 
 <!-- 竖屏提示 -->
 <div id="rotHint">📱 请横屏游玩<br><small>旋转手机以获得最佳体验</small></div>
