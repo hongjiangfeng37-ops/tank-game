@@ -334,8 +334,8 @@ function addBot(room, name) {
   return p;
 }
 
-// ---- AI 寻路：80px 网格 A*（迷宫通道导航，杜绝卡墙角） ----
-const NAV_CELL = 80, NAV_COLS = 20, NAV_ROWS = 15, NAV_PAD = 42, NAV_PAD_TIGHT = 30;
+// ---- AI 寻路：80px 网格 A*（迷宫通道导航，杜绝卡墙角；路径点稀疏减少频繁转向） ----
+const NAV_CELL = 80, NAV_COLS = 20, NAV_ROWS = 15, NAV_PAD = 40, NAV_PAD_TIGHT = 32;
 function navWalkable(room, gx, gy, pad) {
   const cx = NAV_CELL / 2 + gx * NAV_CELL;
   const cy = NAV_CELL / 2 + gy * NAV_CELL;
@@ -350,12 +350,33 @@ function navXYToGrid(x, y) {
     gy: Math.max(0, Math.min(NAV_ROWS - 1, Math.round((y - NAV_CELL / 2) / NAV_CELL))),
   };
 }
+// 路径简化：贪心视线简化（保留必要转弯点；线段按坦克半宽 18px 膨胀检测，防擦障碍角）
+function simplifyPath(room, pts) {
+  if (pts.length <= 2) return pts;
+  const hitInflated = (x0, y0, x1, y1, o) => segRectHit(x0, y0, x1, y1, { x: o.x - 26, y: o.y - 26, w: o.w + 52, h: o.h + 52 });
+  const out = [pts[0]];
+  let i = 0;
+  while (i < pts.length - 1) {
+    let best = i + 1;
+    for (let j = i + 2; j < pts.length; j++) {
+      let clear = true;
+      for (const o of room.obstacles) {
+        if (hitInflated(pts[i].x, pts[i].y, pts[j].x, pts[j].y, o)) { clear = false; break; }
+      }
+      if (clear) best = j; else break;
+    }
+    out.push(pts[best]);
+    i = best;
+  }
+  return out;
+}
 // 返回世界坐标路径点数组（含起点终点）；终点不可行时自动找最近可行格；pad 为障碍膨胀半径
 function navFindPath(room, sx, sy, tx, ty, pad) {
   const s = navXYToGrid(sx, sy);
   let t = navXYToGrid(tx, ty);
-  // 终点格不可行 → 环形搜索最近可行格（半径递增）
-  if (!navWalkable(room, t.gx, t.gy, pad)) {
+  // 终点格不可行 → 环形搜索最近可行格（半径递增；终点用更紧 pad 30，让路径直达目标附近）
+  const tPad = Math.min(pad, 30);
+  if (!navWalkable(room, t.gx, t.gy, tPad)) {
     let found = null;
     for (let r = 1; r <= 7 && !found; r++) {
       for (let dy = -r; dy <= r && !found; dy++) {
@@ -363,7 +384,7 @@ function navFindPath(room, sx, sy, tx, ty, pad) {
           if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
           const ngx = t.gx + dx, ngy = t.gy + dy;
           if (ngx < 0 || ngy < 0 || ngx >= NAV_COLS || ngy >= NAV_ROWS) continue;
-          if (navWalkable(room, ngx, ngy, pad)) { found = { gx: ngx, gy: ngy }; break; }
+          if (navWalkable(room, ngx, ngy, tPad)) { found = { gx: ngx, gy: ngy }; break; }
         }
       }
     }
@@ -398,7 +419,7 @@ function navFindPath(room, sx, sy, tx, ty, pad) {
   const dc = [1, 1, 1, 1, 1.4142, 1.4142, 1.4142, 1.4142];
   let found = null;
   let guard = 0;
-  while (open.length && guard++ < 5000) {
+  while (open.length && guard++ < 9000) {
     let bi = 0;
     for (let i = 1; i < open.length; i++) if (open[i].f < open[bi].f) bi = i;
     const cur = open.splice(bi, 1)[0];
@@ -430,7 +451,7 @@ function navFindPath(room, sx, sy, tx, ty, pad) {
     ci = came[ci];
   }
   pts.reverse();
-  return pts;
+  return simplifyPath(room, pts);
 }
 
 // 找反弹射击角度：世界墙 + 障碍物矩形边（镜像反射法）；返回瞄准角度或 null
@@ -512,7 +533,7 @@ function botThink(p, room, dt) {
   const ai = p.ai || (p.ai = {
     mode: 'combat', strafeT: Math.random() * 2, flankDir: 1, flankT: 1,
     dodgeDir: 1, evadeT: 0, shootT: 0, thinkT: 0,
-    path: null, wp: 0, pathT: 0, stuckT: 0, stuckPos: { x: 0, y: 0 }, unstickT: 0, unstickDir: 1,
+    unstickT: 0, unstickDir: 1, unstickCd: 0, lowSpeedT: 0, rayFollow: false, followSteer: 1,
   });
   ai.strafeT += dt;
   ai.shootT -= dt;
@@ -538,6 +559,12 @@ function botThink(p, room, dt) {
   const brokenCount = PARTS_LIST.filter((n) => !parts[n]).length;
   const lowHp = tk.hp < 50;
   const needRepair = brokenCount > 0 && (brokenCount >= 2 || (lowHp && brokenCount > 0));
+  if (process.env.TK_AI_DEBUG === '1' && room.tick % 30 === 0) {
+    console.log('[AI] t=' + room.tick + ' pos=' + Math.round(tk.x) + ',' + Math.round(tk.y) +
+      ' mode=' + ai.mode + ' dist=' + Math.round(dist) + ' broken=' + brokenCount +
+      ' projV=' + Math.round(tk.vx * Math.cos(tk.a) + tk.vy * Math.sin(tk.a)) +
+      ' lowT=' + Math.round((ai.lowSpeedT || 0) * 100) + ' uc=' + Math.round((ai.unstickCd || 0) * 100));
+  }
 
   // ---- 撤退维修状态：拉开距离停车修车（修好再战） ----
   if (ai.mode === 'repair') {
@@ -640,38 +667,27 @@ function botThink(p, room, dt) {
     // 中距离：包抄到侧后方（弱点位）
     goalX = flankX; goalY = flankY;
   }
+  // 目标点夹在地图可通行范围内（防 flank 点落在地图外/墙角导致绕大圈）
+  goalX = Math.max(WALL_T + 80, Math.min(WORLD.w - WALL_T - 80, goalX));
+  goalY = Math.max(WALL_T + 80, Math.min(WORLD.h - WALL_T - 80, goalY));
 
-  // 路径缓存：目标点变化 >70px 或 0.35s 超时 → 重算 A*（pad 42 失败则缩小到 30 重试）
-  const goalMoved = !ai.path || !ai.path.length || Math.hypot(goalX - ai.goalX, goalY - ai.goalY) > 70;
-  if (goalMoved || ai.pathT <= 0) {
-    ai.pathT = 0.35;
-    ai.goalX = goalX; ai.goalY = goalY;
-    ai.path = navFindPath(room, tk.x, tk.y, goalX, goalY, NAV_PAD);
-    if (!ai.path) ai.path = navFindPath(room, tk.x, tk.y, goalX, goalY, NAV_PAD_TIGHT);
-    ai.wp = 0;
-  }
-
-  // ---- 导航执行：沿路径点走；无路径则直冲（带卡住脱困） ----
-  // 卡住检测：持续低前进速度（顶着障碍/墙角振动）0.6s → 倒车转向脱困并重算路径
+  // ---- 导航：射线墙跟随（目标射线清晰直冲；被挡沿障碍边缘绕行；鲁棒不依赖网格） ----
+  // 卡住检测：持续低前进速度（顶着障碍/墙角振动）0.7s → 倒车转向脱困；两次脱困间隔 ≥1.2s 防误触发循环
   const fwx = Math.cos(tk.a), fwy = Math.sin(tk.a);
   const projSpeed = tk.vx * fwx + tk.vy * fwy; // 前进方向速度投影
-  if (Math.abs(projSpeed) < 10) ai.lowSpeedT = (ai.lowSpeedT || 0) + dt;
+  ai.unstickCd = (ai.unstickCd || 0) - dt;
+  if (Math.abs(projSpeed) < 4) ai.lowSpeedT = (ai.lowSpeedT || 0) + dt;
   else ai.lowSpeedT = 0;
-  if ((ai.lowSpeedT > 0.6 || ai.stuckT > 0.7) && ai.unstickT <= 0) {
+  if (ai.lowSpeedT > 0.7 && ai.unstickCd <= 0) {
+    ai.unstickCd = 1.2;
     ai.unstickT = 0.55;
-    ai.unstickDir = Math.random() < 0.5 ? 1 : -1;
+    // 倒车转向朝目标侧（不随机，脱困后继续接近目标）
+    const tg = Math.atan2(goalY - tk.y, goalX - tk.x);
+    const relT = angDiff(tg - tk.a);
+    ai.unstickDir = relT < 0 ? -1 : 1; // steer=1 右转：目标在左(relT<0)则左转(-1)
     ai.flankDir = -ai.flankDir; // 换包抄方向
-    ai.path = null; // 重算
+    if (ai.rayFollow) ai.followSteer = -ai.followSteer; // 绕行方向不对就换边
     ai.lowSpeedT = 0;
-    ai.stuckT = 0;
-  }
-  // 路径点直线段被障碍挡住（网格与真实几何偏差）→ 立即重算路径
-  if (ai.path && ai.wp < ai.path.length) {
-    let wpBlocked = false;
-    for (const o of room.obstacles) {
-      if (segRectHit(tk.x, tk.y, ai.path[ai.wp].x, ai.path[ai.wp].y, o)) { wpBlocked = true; break; }
-    }
-    if (wpBlocked) { ai.path = null; ai.pathT = 0; }
   }
 
   if (evading) {
@@ -700,44 +716,40 @@ function botThink(p, room, dt) {
     return;
   }
 
-  let navAng = null;
+  if (ai.forceRoundT > 0) {
+    // 强制绕行：持续转向+前进（绕过障碍死角），期间不导航
+    ai.forceRoundT -= dt;
+    p.input = { thr: 1, steer: ai.forceRoundDir, ta: aim, shoot, boost: false };
+    return;
+  }
+
+  // ---- 导航：A* 路径（0.4s 无条件重算，A* 确定性保证方向连续）+ wp 跟踪 + 提前转向 ----
+  const gAng = Math.atan2(goalY - tk.y, goalX - tk.x);
+  ai.pathT = (ai.pathT || 0) - dt;
+  if (ai.pathT <= 0) {
+    ai.pathT = 0.4;
+    ai.path = navFindPath(room, tk.x, tk.y, goalX, goalY, NAV_PAD) || navFindPath(room, tk.x, tk.y, goalX, goalY, NAV_PAD_TIGHT);
+    ai.wp = 0;
+  }
+  let navAng = gAng;
   if (ai.path && ai.path.length > 0) {
-    // 跳过已到达的路径点
-    while (ai.wp < ai.path.length && Math.hypot(ai.path[ai.wp].x - tk.x, ai.path[ai.wp].y - tk.y) < 55) ai.wp++;
+    // 跳过已到达的路径点（90px 容差：弧线转弯偏离格点）
+    while (ai.wp < ai.path.length && Math.hypot(ai.path[ai.wp].x - tk.x, ai.path[ai.wp].y - tk.y) < 90) ai.wp++;
     if (ai.wp < ai.path.length) {
       navAng = Math.atan2(ai.path[ai.wp].y - tk.y, ai.path[ai.wp].x - tk.x);
+      // 提前转向：当前路径点已近（<140）且有下一点 → 朝下一点转（弯道走弧线）
+      if (ai.wp + 1 < ai.path.length) {
+        const dCur = Math.hypot(ai.path[ai.wp].x - tk.x, ai.path[ai.wp].y - tk.y);
+        if (dCur < 140) navAng = Math.atan2(ai.path[ai.wp + 1].y - tk.y, ai.path[ai.wp + 1].x - tk.x);
+      }
     }
-  }
-  if (navAng === null) navAng = Math.atan2(goalY - tk.y, goalX - tk.x); // 直冲目标
-  // A* 失败兜底：前方阻塞（或近墙）时绕行/倒车脱困（炮塔保持瞄准），避免直冲撞墙卡死
-  const sampleBlocked = (angOff) => {
-    const cx = tk.x + Math.cos(tk.a + angOff) * 110;
-    const cy = tk.y + Math.sin(tk.a + angOff) * 110;
-    for (const o of room.obstacles) {
-      if (cx > o.x && cx < o.x + o.w && cy > o.y && cy < o.y + o.h) return true;
-    }
-    return false;
-  };
-  const nearWall = tk.x < WALL_T + 80 || tk.x > WORLD.w - WALL_T - 80 || tk.y < WALL_T + 80 || tk.y > WORLD.h - WALL_T - 80;
-  if (sampleBlocked(0) || nearWall) {
-    const leftBlocked = sampleBlocked(-0.6);
-    const rightBlocked = sampleBlocked(0.6);
-    let st, th;
-    // 绕行方向优先朝目标所在侧（避免沿墙绕向远离目标的一侧）
-    const toGoal = Math.atan2(goalY - tk.y, goalX - tk.x);
-    const rel = angDiff(toGoal - tk.a);
-    if (leftBlocked && rightBlocked) { st = 0; th = -1; }
-    else if (leftBlocked) { st = 1; th = 0.55; }
-    else if (rightBlocked) { st = -1; th = 0.55; }
-    else { st = rel < -0.1 ? -1 : (rel > 0.1 ? 1 : (Math.random() < 0.5 ? 1 : -1)); th = 0.5; }
-    p.input = { thr: th, steer: st, ta: aim, shoot, boost: false };
-    return;
   }
   const ndiff = angDiff(navAng);
   // 距离目标远 → 全速；近 → 减速（避免过冲）
   const gd = Math.hypot(goalX - tk.x, goalY - tk.y);
   let thr = gd > 90 ? 1 : (gd > 45 ? 0.6 : 0.35);
-  if (Math.abs(ndiff) > 1.2) thr = 0.25; // 大转向时减速
+  // 连续减速转弯：转向角越大油门越低（转弯半径随速度下降；大角度近原地转，防 90° 弯卡角）
+  thr = Math.max(0.08, thr * (1 - Math.min(1, Math.abs(ndiff) / 1.3) * 0.85));
   // 中距离包抄完成（侧后位）→ 摆角压制不硬顶
   if (inWeak && dist > 150 && dist < 480 && gd < 150) {
     thr = dist > 250 ? 0.6 : (dist < 195 ? -0.45 : 0.25);
@@ -757,6 +769,15 @@ function botThink(p, room, dt) {
     return;
   }
   const steer = ndiff > 0.12 ? 1 : (ndiff < -0.12 ? -1 : 0);
+  if (process.env.TK_AI_DEBUG === '1' && room.tick % 30 === 0) {
+    console.log('[AI] tick=' + room.tick + ' pos=' + Math.round(tk.x) + ',' + Math.round(tk.y) +
+      ' mode=' + ai.mode + ' goal=' + Math.round(goalX) + ',' + Math.round(goalY) +
+      ' follow=' + (ai.rayFollow ? (ai.followSteer > 0 ? 'R' : 'L') : '-') +
+      ' navAng=' + (navAng !== null ? Math.round(navAng * 57.3) : '-') +
+      ' inWeak=' + inWeak + ' dist=' + Math.round(dist) + ' gd=' + Math.round(gd) +
+      ' projV=' + Math.round(projSpeed) + ' lowT=' + Math.round((ai.lowSpeedT || 0) * 100) +
+      ' unstickCd=' + Math.round((ai.unstickCd || 0) * 100) + ' evad=' + evading);
+  }
   p.input = { thr, steer, ta: aim, shoot, boost: false };
 }
 
