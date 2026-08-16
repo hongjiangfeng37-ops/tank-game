@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 坦克简笔（俯视）：沙黄车体 + 深色履带 + 炮管 -->
+    <path
+        android:fillColor="#c2aa6d"
+        android:pathData="M34,40 L74,40 L78,50 L78,58 L74,68 L34,68 L30,58 L30,50 Z" />
+    <path
+        android:fillColor="#151a21"
+        android:pathData="M26,36 L82,36 L84,40 L84,68 L82,72 L26,72 L24,68 L24,40 Z" />
+    <path
+        android:fillColor="#151a21"
+        android:pathData="M20,44 L88,44 L88,64 L20,64 Z" />
+    <path
+        android:fillColor="#3a3524"
+        android:pathData="M48,48 L66,48 L66,60 L48,60 Z" />
+    <path
+        android:fillColor="#232c38"
+        android:pathData="M78,51 L98,51 L98,57 L78,57 Z" />
+</vector>
