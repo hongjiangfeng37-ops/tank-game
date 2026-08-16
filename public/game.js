@@ -2040,6 +2040,142 @@
     })();
   }
 
+  // ---------------- 布局设置（按键/小地图位置大小，localStorage 持久化，供安卓 App 使用） ----------------
+  const LAYOUT_KEY = 'tank.gameLayout.v1';
+  const LAYOUT_DEFAULT = {
+    dpad: { l: 14, b: 14, s: 54 },   // 十字键：left/bottom/键大小
+    fire: { r: 14, t: 122, s: 66 },  // 开火键：right/top/直径
+    boost: { r: 14, t: 76, s: 52 },  // 加速键
+    map: { r: 12, t: 8, s: 78 },     // 小地图：right/top/宽
+  };
+  const LAYOUT_EL = { dpad: 'dpad', fire: 'btnFire', boost: 'boostBtn', map: 'minimap' };
+  let layout = loadLayout();
+  let layoutSel = 'dpad';
+  let layoutEdit = false;
+  let drag = null;
+
+  function loadLayout() {
+    try {
+      const raw = localStorage.getItem(LAYOUT_KEY);
+      if (raw) {
+        const o = JSON.parse(raw);
+        const L = {};
+        for (const k of Object.keys(LAYOUT_DEFAULT)) L[k] = Object.assign({}, LAYOUT_DEFAULT[k], o[k] || {});
+        return L;
+      }
+    } catch (e) { /* 数据损坏回退默认 */ }
+    return JSON.parse(JSON.stringify(LAYOUT_DEFAULT));
+  }
+  function saveLayout() {
+    try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout)); } catch (e) {}
+  }
+  function applyLayout() {
+    const dp = document.getElementById('dpad');
+    if (dp) {
+      dp.style.left = layout.dpad.l + 'px';
+      dp.style.bottom = layout.dpad.b + 'px';
+      dp.style.gridTemplateColumns = 'repeat(3, ' + layout.dpad.s + 'px)';
+      dp.style.gridTemplateRows = 'repeat(3, ' + layout.dpad.s + 'px)';
+    }
+    const fb = document.getElementById('btnFire');
+    if (fb) {
+      fb.style.right = layout.fire.r + 'px';
+      fb.style.top = layout.fire.t + 'px';
+      fb.style.width = layout.fire.s + 'px';
+      fb.style.height = layout.fire.s + 'px';
+      fb.style.fontSize = Math.max(14, Math.round(layout.fire.s * 0.32)) + 'px';
+    }
+    const bb = document.getElementById('boostBtn');
+    if (bb) {
+      bb.style.right = layout.boost.r + 'px';
+      bb.style.top = layout.boost.t + 'px';
+      bb.style.width = layout.boost.s + 'px';
+      bb.style.height = layout.boost.s + 'px';
+    }
+    const mmEl = document.getElementById('minimap');
+    if (mmEl) {
+      mmEl.style.right = layout.map.r + 'px';
+      mmEl.style.top = layout.map.t + 'px';
+      mmEl.style.width = layout.map.s + 'px';
+      mmEl.style.height = Math.round(layout.map.s * 111 / 148) + 'px';
+    }
+  }
+  function enterLayoutEdit() {
+    layoutEdit = true;
+    document.body.classList.add('layout-edit');
+    const p = document.getElementById('layoutPanel');
+    if (p) p.classList.remove('hidden');
+    updateSelUI();
+  }
+  function exitLayoutEdit() {
+    layoutEdit = false;
+    document.body.classList.remove('layout-edit');
+    const p = document.getElementById('layoutPanel');
+    if (p) p.classList.add('hidden');
+  }
+  function updateSelUI() {
+    const sizeEl = document.getElementById('lpSize');
+    const valEl = document.getElementById('lpSizeVal');
+    if (sizeEl) sizeEl.value = String(layout[layoutSel].s);
+    if (valEl) valEl.textContent = layout[layoutSel].s;
+    document.querySelectorAll('.lpSel').forEach((b) => b.classList.toggle('active', b.dataset.lp === layoutSel));
+  }
+  // 拖动（捕获阶段，避免与开火键/十字键的原有绑定冲突）
+  document.addEventListener('pointerdown', (e) => {
+    if (!layoutEdit) return;
+    const tgt = document.getElementById(LAYOUT_EL[layoutSel]);
+    if (!tgt) return;
+    const rect = tgt.getBoundingClientRect();
+    if (e.clientX >= rect.left - 12 && e.clientX <= rect.right + 12 && e.clientY >= rect.top - 12 && e.clientY <= rect.bottom + 12) {
+      e.preventDefault();
+      e.stopPropagation();
+      drag = { offX: e.clientX - rect.left, offY: e.clientY - rect.top };
+      try { tgt.setPointerCapture(e.pointerId); } catch (err) {}
+    }
+  }, true);
+  document.addEventListener('pointermove', (e) => {
+    if (!layoutEdit || !drag) return;
+    e.preventDefault();
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const tgt = document.getElementById(LAYOUT_EL[layoutSel]);
+    if (!tgt) return;
+    const rect = tgt.getBoundingClientRect();
+    const left = Math.max(0, Math.min(vw - rect.width, e.clientX - drag.offX));
+    const top = Math.max(0, Math.min(vh - rect.height, e.clientY - drag.offY));
+    if (layoutSel === 'dpad') { layout.dpad.l = Math.round(left); layout.dpad.b = Math.round(vh - top - rect.height); }
+    else if (layoutSel === 'fire') { layout.fire.r = Math.round(vw - left - rect.width); layout.fire.t = Math.round(top); }
+    else if (layoutSel === 'boost') { layout.boost.r = Math.round(vw - left - rect.width); layout.boost.t = Math.round(top); }
+    else if (layoutSel === 'map') { layout.map.r = Math.round(vw - left - rect.width); layout.map.t = Math.round(top); }
+    applyLayout();
+  });
+  document.addEventListener('pointerup', () => { drag = null; });
+  document.addEventListener('pointercancel', () => { drag = null; });
+  // 面板交互
+  const lpPanel = document.getElementById('layoutPanel');
+  if (lpPanel) {
+    lpPanel.addEventListener('click', (e) => {
+      const sel = e.target.closest && e.target.closest('.lpSel');
+      if (sel) { layoutSel = sel.dataset.lp; updateSelUI(); return; }
+      if (e.target.id === 'lpSave') { saveLayout(); exitLayoutEdit(); return; }
+      if (e.target.id === 'lpReset') { layout = JSON.parse(JSON.stringify(LAYOUT_DEFAULT)); applyLayout(); updateSelUI(); return; }
+      if (e.target.id === 'lpClose') { layout = loadLayout(); applyLayout(); exitLayoutEdit(); return; }
+    });
+  }
+  const sizeEl = document.getElementById('lpSize');
+  if (sizeEl) {
+    sizeEl.addEventListener('input', () => {
+      layout[layoutSel].s = parseInt(sizeEl.value, 10) || 54;
+      const valEl = document.getElementById('lpSizeVal');
+      if (valEl) valEl.textContent = layout[layoutSel].s;
+      applyLayout();
+    });
+  }
+  const btnLayout = document.getElementById('btnLayout');
+  if (btnLayout) btnLayout.addEventListener('click', enterLayoutEdit);
+  const btnLayoutGame = document.getElementById('btnLayoutGame');
+  if (btnLayoutGame) btnLayoutGame.addEventListener('click', enterLayoutEdit);
+  applyLayout();
+
   // ---------------- 启动 ----------------
   showMenu();
   resize();
