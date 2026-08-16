@@ -334,20 +334,159 @@ function addBot(room, name) {
   return p;
 }
 
-// AI 行为：智能战斗（状态机）——身法摆角 + 弹道规避 + 侧翼包抄打击弱点 + 墙角反弹射击 + 道具拾取 + 撤退维修
-// 目标是难以战胜：精准提前量射击、机动规避、绕到玩家侧后打弱点、被打坏了会拉开距离修车再战
+// ---- AI 寻路：80px 网格 A*（迷宫通道导航，杜绝卡墙角） ----
+const NAV_CELL = 80, NAV_COLS = 20, NAV_ROWS = 15, NAV_PAD = 42;
+function navWalkable(room, gx, gy) {
+  const cx = NAV_CELL / 2 + gx * NAV_CELL;
+  const cy = NAV_CELL / 2 + gy * NAV_CELL;
+  if (cx < WALL_T + 48 || cx > WORLD.w - WALL_T - 48 || cy < WALL_T + 48 || cy > WORLD.h - WALL_T - 48) return false;
+  if (insideObstacle(cx, cy, NAV_PAD, room.obstacles)) return false;
+  return true;
+}
+function navGridToXY(gx, gy) { return { x: NAV_CELL / 2 + gx * NAV_CELL, y: NAV_CELL / 2 + gy * NAV_CELL }; }
+function navXYToGrid(x, y) {
+  return {
+    gx: Math.max(0, Math.min(NAV_COLS - 1, Math.round((x - NAV_CELL / 2) / NAV_CELL))),
+    gy: Math.max(0, Math.min(NAV_ROWS - 1, Math.round((y - NAV_CELL / 2) / NAV_CELL))),
+  };
+}
+// 返回世界坐标路径点数组（含起点终点）；目标格不可达返回 null
+function navFindPath(room, sx, sy, tx, ty) {
+  const s = navXYToGrid(sx, sy), t = navXYToGrid(tx, ty);
+  if (!navWalkable(room, t.gx, t.gy)) return null;
+  const W = NAV_COLS, H = NAV_ROWS;
+  const g = new Float64Array(W * H); g.fill(Infinity);
+  const came = new Int32Array(W * H); came.fill(-1);
+  const closed = new Uint8Array(W * H);
+  const open = [];
+  const si = s.gy * W + s.gx;
+  g[si] = 0;
+  open.push({ f: Math.hypot(s.gx - t.gx, s.gy - t.gy), gx: s.gx, gy: s.gy });
+  const dirs = [[1,0],[0,1],[-1,0],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+  const dc = [1, 1, 1, 1, 1.4142, 1.4142, 1.4142, 1.4142];
+  let found = null;
+  let guard = 0;
+  while (open.length && guard++ < 5000) {
+    let bi = 0;
+    for (let i = 1; i < open.length; i++) if (open[i].f < open[bi].f) bi = i;
+    const cur = open.splice(bi, 1)[0];
+    const ci = cur.gy * W + cur.gx;
+    if (cur.gx === t.gx && cur.gy === t.gy) { found = cur; break; }
+    if (closed[ci]) continue;
+    closed[ci] = 1;
+    for (let d = 0; d < 8; d++) {
+      const nx = cur.gx + dirs[d][0], ny = cur.gy + dirs[d][1];
+      if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+      if (!navWalkable(room, nx, ny)) continue;
+      const ni = ny * W + nx;
+      if (closed[ni]) continue;
+      const ng = g[ci] + dc[d];
+      if (ng < g[ni]) {
+        g[ni] = ng;
+        came[ni] = ci;
+        open.push({ f: ng + Math.hypot(nx - t.gx, ny - t.gy), gx: nx, gy: ny });
+      }
+    }
+  }
+  if (!found) return null;
+  const pts = [];
+  let ci = t.gy * W + t.gx;
+  while (ci !== -1) {
+    pts.push(navGridToXY(ci % W, Math.floor(ci / W)));
+    ci = came[ci];
+  }
+  pts.reverse();
+  return pts;
+}
+
+// 找反弹射击角度：世界墙 + 障碍物矩形边（镜像反射法）；返回瞄准角度或 null
+function findBankAim(room, tk, tt) {
+  // 世界墙反射
+  const walls = [
+    { vert: true, val: WALL_T }, { vert: true, val: WORLD.w - WALL_T },
+    { vert: false, val: WALL_T }, { vert: false, val: WORLD.h - WALL_T },
+  ];
+  for (const w of walls) {
+    const pd = w.vert ? Math.abs(tt.x - w.val) : Math.abs(tt.y - w.val);
+    if (pd > 160) continue;
+    const mx = w.vert ? 2 * w.val - tt.x : tt.x;
+    const my = w.vert ? tt.y : 2 * w.val - tt.y;
+    let ix, iy;
+    if (w.vert) {
+      if (Math.abs(mx - tk.x) < 1) continue;
+      const t = (w.val - tk.x) / (mx - tk.x);
+      if (t <= 0.04 || t >= 0.96) continue;
+      iy = tk.y + t * (my - tk.y);
+      if (iy < WALL_T + 40 || iy > WORLD.h - WALL_T - 40) continue;
+      ix = w.val;
+    } else {
+      if (Math.abs(my - tk.y) < 1) continue;
+      const t = (w.val - tk.y) / (my - tk.y);
+      if (t <= 0.04 || t >= 0.96) continue;
+      ix = tk.x + t * (mx - tk.x);
+      if (ix < WALL_T + 40 || ix > WORLD.w - WALL_T - 40) continue;
+      iy = w.val;
+    }
+    let clear = true;
+    for (const o of room.obstacles) {
+      if (segRectHit(tk.x, tk.y, ix, iy, o) || segRectHit(ix, iy, tt.x, tt.y, o)) { clear = false; break; }
+    }
+    if (clear) return Math.atan2(my - tk.y, mx - tk.x);
+  }
+  // 障碍物矩形边反射（迷宫墙反弹打玩家）
+  for (const o of room.obstacles) {
+    // 快速跳过：矩形远离双方（<380px 才可能构成反射路径）
+    const nearBot = tk.x > o.x - 380 && tk.x < o.x + o.w + 380 && tk.y > o.y - 380 && tk.y < o.y + o.h + 380;
+    const nearTgt = tt.x > o.x - 380 && tt.x < o.x + o.w + 380 && tt.y > o.y - 380 && tt.y < o.y + o.h + 380;
+    if (!nearBot || !nearTgt) continue;
+    const edges = [
+      { ax: o.x, ay: o.y, bx: o.x + o.w, by: o.y, nx: 0, ny: -1 },
+      { ax: o.x, ay: o.y + o.h, bx: o.x + o.w, by: o.y + o.h, nx: 0, ny: 1 },
+      { ax: o.x, ay: o.y, bx: o.x, by: o.y + o.h, nx: -1, ny: 0 },
+      { ax: o.x + o.w, ay: o.y, bx: o.x + o.w, by: o.y + o.h, nx: 1, ny: 0 },
+    ];
+    for (const e of edges) {
+      const ex0 = e.ax, ey0 = e.ay;
+      // 双方必须在反射面外侧（法线侧）
+      const toB = (tk.x - ex0) * e.nx + (tk.y - ey0) * e.ny;
+      const toT = (tt.x - ex0) * e.nx + (tt.y - ey0) * e.ny;
+      if (toB < 2 || toT < 2) continue;
+      // 玩家镜像
+      const mx = tt.x - 2 * toT * e.nx, my = tt.y - 2 * toT * e.ny;
+      const dxl = mx - tk.x, dyl = my - tk.y;
+      const denom = dxl * e.nx + dyl * e.ny;
+      if (Math.abs(denom) < 1) continue;
+      const t = ((ex0 - tk.x) * e.nx + (ey0 - tk.y) * e.ny) / denom;
+      if (t <= 0.03 || t >= 0.97) continue;
+      const ix = tk.x + t * dxl, iy = tk.y + t * dyl;
+      if (ix < Math.min(e.ax, e.bx) - 1 || ix > Math.max(e.ax, e.bx) + 1 || iy < Math.min(e.ay, e.by) - 1 || iy > Math.max(e.ay, e.by) + 1) continue;
+      let clear = true;
+      for (const o2 of room.obstacles) {
+        if (o2 === o) continue;
+        if (segRectHit(tk.x, tk.y, ix, iy, o2) || segRectHit(ix, iy, tt.x, tt.y, o2)) { clear = false; break; }
+      }
+      if (clear) return Math.atan2(my - tk.y, mx - tk.x);
+    }
+  }
+  return null;
+}
+
+// AI 行为：智能战斗（状态机）——A* 寻路导航 + 身法摆角 + 弹道规避 + 侧翼包抄打击弱点 + 主动反弹射击 + 道具拾取 + 撤退维修
+// 目标是难以战胜：不卡墙角、精准提前量射击、机动躲炮弹、绕到玩家侧后打弱点、被打坏了会拉开距离修车再战
 function botThink(p, room, dt) {
   const tk = p.tank;
   const ai = p.ai || (p.ai = {
     mode: 'combat', strafeT: Math.random() * 2, flankDir: 1, flankT: 1,
     dodgeDir: 1, evadeT: 0, shootT: 0, thinkT: 0,
+    path: null, wp: 0, pathT: 0, stuckT: 0, stuckPos: { x: 0, y: 0 }, unstickT: 0, unstickDir: 1,
   });
   ai.strafeT += dt;
   ai.shootT -= dt;
   ai.evadeT -= dt;
   ai.flankT -= dt;
   ai.thinkT -= dt;
-  if (ai.flankT <= 0) { ai.flankT = 1.4 + Math.random() * 1.3; ai.flankDir = Math.random() < 0.5 ? 1 : -1; }
+  ai.unstickT -= dt;
+  if (ai.flankT <= 0) { ai.flankT = 1.5 + Math.random() * 1.4; ai.flankDir = Math.random() < 0.5 ? 1 : -1; }
 
   // 目标：优先真人，否则其他 bot
   let target = null;
@@ -359,188 +498,195 @@ function botThink(p, room, dt) {
   const dist = Math.hypot(dx, dy);
   const angTo = Math.atan2(dy, dx);
   const angDiff = (a) => { let d = a - tk.a; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; };
+  const sightClear = (x0, y0, x1, y1) => { for (const o of room.obstacles) if (segRectHit(x0, y0, x1, y1, o)) return false; return true; };
 
   const parts = p.parts;
   const brokenCount = PARTS_LIST.filter((n) => !parts[n]).length;
   const lowHp = tk.hp < 50;
   const needRepair = brokenCount > 0 && (brokenCount >= 2 || (lowHp && brokenCount > 0));
 
-  // 避障探测：前方与左右 110px 采样 + 世界边界
-  const sampleBlocked = (angOff) => {
-    const cx = tk.x + Math.cos(tk.a + angOff) * 110;
-    const cy = tk.y + Math.sin(tk.a + angOff) * 110;
-    for (const o of room.obstacles) {
-      if (cx > o.x && cx < o.x + o.w && cy > o.y && cy < o.y + o.h) return true;
-    }
-    return false;
-  };
-  const nearWall = tk.x < WALL_T + 80 || tk.x > WORLD.w - WALL_T - 80 || tk.y < WALL_T + 80 || tk.y > WORLD.h - WALL_T - 80;
-
   // ---- 撤退维修状态：拉开距离停车修车（修好再战） ----
   if (ai.mode === 'repair') {
     if (brokenCount === 0) { ai.mode = 'combat'; }
     else {
       if (dist < 400) {
-        // 玩家逼近：先跑（避开玩家方向，带避障）
         const away = angTo + Math.PI;
-        let st = 0;
         const dd = angDiff(away);
-        st = dd > 0.15 ? 1 : (dd < -0.15 ? -1 : 0);
-        p.input = { thr: 1, steer: st, ta: angTo, shoot: false, boost: true };
+        p.input = { thr: 1, steer: dd > 0.15 ? 1 : (dd < -0.15 ? -1 : 0), ta: angTo, shoot: false, boost: true };
       } else if (dist > 560) {
-        // 安全距离：完全静止修车（炮塔仍指向玩家防御）
-        p.input = { thr: 0, steer: 0, ta: angTo, shoot: false, boost: false };
+        p.input = { thr: 0, steer: 0, ta: angTo, shoot: false, boost: false }; // 完全静止修车
       } else {
-        // 不够远：继续拉开
         const away = angTo + Math.PI;
-        let st = 0;
         const dd = angDiff(away);
-        st = dd > 0.15 ? 1 : (dd < -0.15 ? -1 : 0);
-        p.input = { thr: 1, steer: st, ta: angTo, shoot: false, boost: false };
+        p.input = { thr: 1, steer: dd > 0.15 ? 1 : (dd < -0.15 ? -1 : 0), ta: angTo, shoot: false, boost: false };
       }
       return;
     }
   }
   if (needRepair && dist < 480) ai.mode = 'repair';
 
-  // ---- 威胁检测：目标发射、正朝本 bot 飞来的炮弹 ----
-  let threat = null;
+  // ---- 弹道规避：预测炮弹轨迹，横向急加速闪避（每 tick 检测，可连续触发） ----
+  let threat = null, threatPos = null;
   for (const b of room.bullets) {
     if (b.ownerId !== target.id) continue;
     const bx = b.x - tk.x, by = b.y - tk.y;
     const bd = Math.hypot(bx, by);
-    if (bd > 300 || bd < 10) continue;
+    if (bd > 430 || bd < 10) continue;
     const spd = Math.hypot(b.vx, b.vy) || 1;
     const dot = (b.vx * -bx + b.vy * -by) / (spd * bd);
-    if (dot > 0.82) { threat = b; break; }
+    if (dot > 0.72) {
+      threat = b;
+      // 预测炮弹 0.3s 后的位置（闪避远离点）
+      threatPos = { x: b.x + b.vx * 0.3, y: b.y + b.vy * 0.3 };
+      break;
+    }
   }
-  if (threat && ai.evadeT <= 0) {
-    ai.evadeT = 0.38; // 闪避 0.38s
-    const cross = threat.vx * (tk.y - threat.y) - threat.vy * (tk.x - threat.x);
-    ai.dodgeDir = cross > 0 ? 1 : -1;
+  if (threat) {
+    ai.evadeT = Math.max(ai.evadeT, 0.5); // 持续威胁则持续闪避
+    if (ai.thinkT <= 0) {
+      const cross = threat.vx * (tk.y - threat.y) - threat.vy * (tk.x - threat.x);
+      ai.dodgeDir = cross > 0 ? 1 : -1;
+    }
   }
   const evading = ai.evadeT > 0;
 
-  // ---- 反弹射击：玩家贴墙时找世界墙反射路径（先手打击，弹射命中） ----
-  let bankAim = null;
-  if (!evading && dist > 150 && dist < 920 && ai.thinkT <= 0) {
-    ai.thinkT = 0.15;
-    const walls = [
-      { vert: true, val: WALL_T }, { vert: true, val: WORLD.w - WALL_T },
-      { vert: false, val: WALL_T }, { vert: false, val: WORLD.h - WALL_T },
-    ];
-    for (const w of walls) {
-      const pd = w.vert ? Math.abs(tt.x - w.val) : Math.abs(tt.y - w.val);
-      if (pd > 150) continue;
-      const mx = w.vert ? 2 * w.val - tt.x : tt.x;
-      const my = w.vert ? tt.y : 2 * w.val - tt.y;
-      let ix, iy;
-      if (w.vert) {
-        if (Math.abs(mx - tk.x) < 1) continue;
-        const t = (w.val - tk.x) / (mx - tk.x);
-        if (t <= 0.04 || t >= 0.96) continue;
-        iy = tk.y + t * (my - tk.y);
-        if (iy < WALL_T + 40 || iy > WORLD.h - WALL_T - 40) continue;
-        ix = w.val;
-      } else {
-        if (Math.abs(my - tk.y) < 1) continue;
-        const t = (w.val - tk.y) / (my - tk.y);
-        if (t <= 0.04 || t >= 0.96) continue;
-        ix = tk.x + t * (mx - tk.x);
-        if (ix < WALL_T + 40 || ix > WORLD.w - WALL_T - 40) continue;
-        iy = w.val;
-      }
-      let clear = true;
-      for (const o of room.obstacles) {
-        if (segRectHit(tk.x, tk.y, ix, iy, o) || segRectHit(ix, iy, tt.x, tt.y, o)) { clear = false; break; }
-      }
-      if (clear) { bankAim = Math.atan2(my - tk.y, mx - tk.x); break; }
-    }
-  }
-
-  // ---- 瞄准：提前量预测（按炮弹飞行时间）+ 开火 ----
+  // ---- 开火瞄准：提前量预测（按炮弹飞行时间）+ 视线检查 + 主动反弹（直线被挡时找反射路径） ----
   const lead = Math.min(0.6, dist / 620 * 0.92);
   const aimX = tt.x + tt.vx * lead, aimY = tt.y + tt.vy * lead;
   const baseAim = Math.atan2(aimY - tk.y, aimX - tk.x);
+  const mx0 = tk.x + Math.cos(tk.ta) * 40, my0 = tk.y + Math.sin(tk.ta) * 40;
+  const lineBlocked = !sightClear(mx0, my0, aimX, aimY);
+  let bankAim = null;
+  if (!evading && dist > 150 && dist < 920 && ai.thinkT <= 0) {
+    ai.thinkT = 0.12;
+    // 玩家贴墙 或 直线视线被挡 → 主动找反弹路径（世界墙 + 障碍边）
+    const pNearWall = tt.x < WALL_T + 160 || tt.x > WORLD.w - WALL_T - 160 || tt.y < WALL_T + 160 || tt.y > WORLD.h - WALL_T - 160;
+    if (pNearWall || lineBlocked) bankAim = findBankAim(room, tk, tt);
+  }
   const aim = bankAim !== null ? bankAim : baseAim;
   let taDiff = aim - tk.ta;
   while (taDiff > Math.PI) taDiff -= 2 * Math.PI;
   while (taDiff < -Math.PI) taDiff += 2 * Math.PI;
-  // 弱点位判定：bot 是否位于玩家侧后方（玩家车头坐标系投影）
+  // 弱点位：bot 在玩家侧后方（车头坐标系投影）
   const fwdx = Math.cos(tt.a), fwdy = Math.sin(tt.a);
   const px = fwdx * (tk.x - tt.x) + fwdy * (tk.y - tt.y);
   const py = -fwdx * (tk.y - tt.y) + fwdy * (tk.x - tt.x);
   const behind = px < -18;
   const sidePos = Math.abs(py) > 20;
   const inWeak = behind || sidePos;
+  // 开火许可：反弹路径已验过（可直接打）；直线瞄准需视线清晰
+  const canSee = bankAim !== null ? true : !lineBlocked;
   const aimOk = Math.abs(taDiff) < (inWeak ? 0.1 : 0.055);
-  const shoot = p.mag > 0 && aimOk && dist < 820 && ai.shootT <= 0;
+  const shoot = canSee && p.mag > 0 && aimOk && dist < 820 && ai.shootT <= 0;
   if (shoot) ai.shootT = 0.24;
 
-  // ---- 车体机动（身法：摆角蛇形 + 弹道闪避 + 侧翼包抄 + 距离控制） ----
-  let desired, thr;
+  // ---- 目标点决策（弱点包抄 / 追击 / 拉开）+ A* 导航 ----
+  // 侧后方包抄点：玩家后方 130 + 侧向 120（flankDir 交替侧）
+  const sideX = -fwdy, sideY = fwdx;
+  const flankX = tt.x - fwdx * 130 + sideX * ai.flankDir * 120;
+  const flankY = tt.y - fwdy * 130 + sideY * ai.flankDir * 120;
+  let goalX, goalY;
   if (evading) {
-    // 弹道闪避：朝垂直方向猛冲（boost 加速）
-    desired = angTo + ai.dodgeDir * Math.PI / 2 + (Math.random() - 0.5) * 0.35;
-    thr = 1;
-  } else if (inWeak && dist > 150 && dist < 520) {
-    // 已在侧后：保持位置绕行压制（摆角维持正面威慑）
-    desired = angTo + Math.sin(ai.strafeT * 2.3) * 0.3;
-    thr = dist > 250 ? 0.7 : (dist < 195 ? -0.5 : 0.3);
-  } else if (dist > 540) {
-    // 过远：接近（蛇形摆角，减少直线上被命中）
-    desired = angTo + Math.sin(ai.strafeT * 1.7) * 0.26;
-    thr = 1;
-  } else if (dist < 195) {
-    // 过近：倒车拉开保持正面（摆角）
-    desired = angTo + Math.sin(ai.strafeT * 2.1) * 0.3;
-    thr = -0.78;
+    // 闪避中：目标 = 闪避方向（不由导航控制，直接走）
+    goalX = tk.x + Math.cos(angTo + ai.dodgeDir * Math.PI / 2 + (Math.random() - 0.5) * 0.35) * 200;
+    goalY = tk.y + Math.sin(angTo + ai.dodgeDir * Math.PI / 2 + (Math.random() - 0.5) * 0.35) * 200;
+  } else if (inWeak && dist > 140 && dist < 560) {
+    // 已在侧后：贴住压制（目标 = 玩家位置，保持距离）
+    goalX = tt.x - fwdx * 120;
+    goalY = tt.y - fwdy * 120;
+  } else if (dist > 560) {
+    // 远：追击（目标 = 玩家位置偏近点）
+    goalX = tt.x - fwdx * 60;
+    goalY = tt.y - fwdy * 60;
+  } else if (dist < 190) {
+    // 过近：拉开
+    goalX = tk.x - dx / dist * 260;
+    goalY = tk.y - dy / dist * 260;
   } else {
-    // 中距离：侧翼包抄——绕行到玩家侧面/后方（打弱点部位）
-    desired = angTo + ai.flankDir * 1.05;
-    thr = 0.82;
+    // 中距离：包抄到侧后方（弱点位）
+    goalX = flankX; goalY = flankY;
   }
-  const diff = angDiff(desired);
-  const steer = diff > 0.12 ? 1 : (diff < -0.12 ? -1 : 0);
-  const turnThr = Math.abs(diff) > 1.2 ? 0.25 : thr;
 
-  // 避障：前方阻塞（含绕行时）→ 绕行/倒车脱困（炮塔保持瞄准）
-  if (sampleBlocked(0) || nearWall) {
-    const leftBlocked = sampleBlocked(-0.6);
-    const rightBlocked = sampleBlocked(0.6);
-    let st, th;
-    if (leftBlocked && rightBlocked) { st = 0; th = -1; }
-    else if (leftBlocked) { st = 1; th = 0.55; }
-    else if (rightBlocked) { st = -1; th = 0.55; }
-    else { st = Math.random() < 0.5 ? 1 : -1; th = 0.4; }
-    p.input = { thr: th, steer: st, ta: aim, shoot, boost: false };
+  // 路径缓存：目标点变化 >70px 或 0.35s 超时 → 重算 A*
+  const goalMoved = !ai.path || !ai.path.length || Math.hypot(goalX - ai.goalX, goalY - ai.goalY) > 70;
+  if (goalMoved || ai.pathT <= 0) {
+    ai.pathT = 0.35;
+    ai.goalX = goalX; ai.goalY = goalY;
+    ai.path = navFindPath(room, tk.x, tk.y, goalX, goalY);
+    ai.wp = 0;
+  }
+
+  // ---- 导航执行：沿路径点走；无路径则直冲（带卡住脱困） ----
+  // 卡住检测：有油门但位移极小 0.7s → 倒车转向脱困并重算路径
+  const moved = Math.hypot(tk.x - ai.stuckPos.x, tk.y - ai.stuckPos.y);
+  ai.stuckT += dt;
+  if (moved > 25) { ai.stuckT = 0; ai.stuckPos = { x: tk.x, y: tk.y }; }
+  if (ai.stuckT > 0.7 && ai.unstickT <= 0) {
+    ai.unstickT = 0.4;
+    ai.unstickDir = Math.random() < 0.5 ? 1 : -1;
+    ai.path = null; // 重算
+  }
+
+  if (evading) {
+    // 闪避：直接朝闪避方向猛冲（不导航）
+    const da = angTo + ai.dodgeDir * Math.PI / 2 + (Math.random() - 0.5) * 0.35;
+    const dd = angDiff(da);
+    p.input = { thr: 1, steer: dd > 0.12 ? 1 : (dd < -0.12 ? -1 : 0), ta: aim, shoot, boost: true };
     return;
   }
 
-  // ---- 道具拾取：低血时优先血包；顺路捡 rapid/triple/shield ----
-  let pupTarget = null;
-  if (tk.hp < 78) {
-    for (const pu of room.pups) {
-      if (pu.type !== 'health') continue;
-      const pdd = Math.hypot(pu.x - tk.x, pu.y - tk.y);
-      if (pdd < 400 && (pupTarget === null || pdd < pupTarget.d)) pupTarget = { x: pu.x, y: pu.y, d: pdd };
-    }
-  }
-  if (!pupTarget) {
-    for (const pu of room.pups) {
-      if (pu.type !== 'rapid' && pu.type !== 'triple' && pu.type !== 'shield') continue;
-      const pdd = Math.hypot(pu.x - tk.x, pu.y - tk.y);
-      if (pdd < 250 && (pupTarget === null || pdd < pupTarget.d)) pupTarget = { x: pu.x, y: pu.y, d: pdd };
-    }
-  }
-  if (pupTarget && !evading && dist > 130) {
-    const pupAng = Math.atan2(pupTarget.y - tk.y, pupTarget.x - tk.x);
-    const st2 = angDiff(pupAng) > 0.12 ? 1 : -1;
-    p.input = { thr: 1, steer: st2, ta: aim, shoot, boost: false };
+  if (bankAim !== null && dist > 150 && dist < 740) {
+    // 反弹射击位：反射路径有效 → 站定弹射输出（仅微调距离，不破坏反射几何）
+    let thrB;
+    if (dist > 520) thrB = 0.6;
+    else if (dist < 230) thrB = -0.4;
+    else thrB = 0.08;
+    const sw = Math.sin(ai.strafeT * 1.4) * 0.12;
+    const dd = angDiff(angTo + sw);
+    p.input = { thr: thrB, steer: dd > 0.12 ? 1 : (dd < -0.12 ? -1 : 0), ta: aim, shoot, boost: false };
     return;
   }
 
-  p.input = { thr: turnThr, steer, ta: aim, shoot, boost: evading };
+  if (ai.unstickT > 0) {
+    // 脱困：倒车 + 转向
+    p.input = { thr: -1, steer: ai.unstickDir, ta: aim, shoot, boost: false };
+    return;
+  }
+
+  let navAng = null;
+  if (ai.path && ai.path.length > 0) {
+    // 跳过已到达的路径点
+    while (ai.wp < ai.path.length && Math.hypot(ai.path[ai.wp].x - tk.x, ai.path[ai.wp].y - tk.y) < 55) ai.wp++;
+    if (ai.wp < ai.path.length) {
+      navAng = Math.atan2(ai.path[ai.wp].y - tk.y, ai.path[ai.wp].x - tk.x);
+    }
+  }
+  if (navAng === null) navAng = Math.atan2(goalY - tk.y, goalX - tk.x); // 直冲目标
+  const ndiff = angDiff(navAng);
+  // 距离目标远 → 全速；近 → 减速（避免过冲）
+  const gd = Math.hypot(goalX - tk.x, goalY - tk.y);
+  let thr = gd > 90 ? 1 : (gd > 45 ? 0.6 : 0.35);
+  if (Math.abs(ndiff) > 1.2) thr = 0.25; // 大转向时减速
+  // 中距离包抄完成（侧后位）→ 摆角压制不硬顶
+  if (inWeak && dist > 150 && dist < 480 && gd < 150) {
+    thr = dist > 250 ? 0.6 : (dist < 195 ? -0.45 : 0.25);
+    // 保持侧后：目标方向加摆动（身法）
+    const sw = Math.sin(ai.strafeT * 2.3) * 0.3;
+    const da = angTo + sw;
+    const dd = angDiff(da);
+    p.input = { thr, steer: dd > 0.12 ? 1 : (dd < -0.12 ? -1 : 0), ta: aim, shoot, boost: false };
+    return;
+  }
+  // 追击时蛇形摆角（减少直线被命中）
+  if (dist > 400 && gd > 150) {
+    const sw = Math.sin(ai.strafeT * 1.7) * 0.24;
+    const da = navAng + sw;
+    const dd = angDiff(da);
+    p.input = { thr: 1, steer: dd > 0.12 ? 1 : (dd < -0.12 ? -1 : 0), ta: aim, shoot, boost: false };
+    return;
+  }
+  const steer = ndiff > 0.12 ? 1 : (ndiff < -0.12 ? -1 : 0);
+  p.input = { thr, steer, ta: aim, shoot, boost: false };
 }
 
 function removePlayer(room, p) {
