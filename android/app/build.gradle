@@ -1,0 +1,29 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.tankgame.app'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.tankgame.app"
+        minSdk 26
+        targetSdk 34
+        versionCode 104
+        versionName "0.02.104"  // 测试版：0.02.(改动次数)
+    }
+
+    buildTypes {
+        release {
+            // 用 debug 签名，让 CI 产出的 APK 可直接安装
+            signingConfig signingConfigs.debug
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
