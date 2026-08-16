@@ -335,12 +335,12 @@ function addBot(room, name) {
 }
 
 // ---- AI 寻路：80px 网格 A*（迷宫通道导航，杜绝卡墙角） ----
-const NAV_CELL = 80, NAV_COLS = 20, NAV_ROWS = 15, NAV_PAD = 42;
-function navWalkable(room, gx, gy) {
+const NAV_CELL = 80, NAV_COLS = 20, NAV_ROWS = 15, NAV_PAD = 42, NAV_PAD_TIGHT = 30;
+function navWalkable(room, gx, gy, pad) {
   const cx = NAV_CELL / 2 + gx * NAV_CELL;
   const cy = NAV_CELL / 2 + gy * NAV_CELL;
   if (cx < WALL_T + 48 || cx > WORLD.w - WALL_T - 48 || cy < WALL_T + 48 || cy > WORLD.h - WALL_T - 48) return false;
-  if (insideObstacle(cx, cy, NAV_PAD, room.obstacles)) return false;
+  if (insideObstacle(cx, cy, pad, room.obstacles)) return false;
   return true;
 }
 function navGridToXY(gx, gy) { return { x: NAV_CELL / 2 + gx * NAV_CELL, y: NAV_CELL / 2 + gy * NAV_CELL }; }
@@ -350,18 +350,50 @@ function navXYToGrid(x, y) {
     gy: Math.max(0, Math.min(NAV_ROWS - 1, Math.round((y - NAV_CELL / 2) / NAV_CELL))),
   };
 }
-// 返回世界坐标路径点数组（含起点终点）；目标格不可达返回 null
-function navFindPath(room, sx, sy, tx, ty) {
-  const s = navXYToGrid(sx, sy), t = navXYToGrid(tx, ty);
-  if (!navWalkable(room, t.gx, t.gy)) return null;
+// 返回世界坐标路径点数组（含起点终点）；终点不可行时自动找最近可行格；pad 为障碍膨胀半径
+function navFindPath(room, sx, sy, tx, ty, pad) {
+  const s = navXYToGrid(sx, sy);
+  let t = navXYToGrid(tx, ty);
+  // 终点格不可行 → 环形搜索最近可行格（半径递增）
+  if (!navWalkable(room, t.gx, t.gy, pad)) {
+    let found = null;
+    for (let r = 1; r <= 7 && !found; r++) {
+      for (let dy = -r; dy <= r && !found; dy++) {
+        for (let dx = -r; dx <= r && !found; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          const ngx = t.gx + dx, ngy = t.gy + dy;
+          if (ngx < 0 || ngy < 0 || ngx >= NAV_COLS || ngy >= NAV_ROWS) continue;
+          if (navWalkable(room, ngx, ngy, pad)) { found = { gx: ngx, gy: ngy }; break; }
+        }
+      }
+    }
+    if (!found) return null;
+    t = found;
+  }
+  // 起点格不可行 → 同样找最近可行格
+  let s2 = s;
+  if (!navWalkable(room, s.gx, s.gy, pad)) {
+    let found = null;
+    for (let r = 1; r <= 4 && !found; r++) {
+      for (let dy = -r; dy <= r && !found; dy++) {
+        for (let dx = -r; dx <= r && !found; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          const ngx = s.gx + dx, ngy = s.gy + dy;
+          if (ngx < 0 || ngy < 0 || ngx >= NAV_COLS || ngy >= NAV_ROWS) continue;
+          if (navWalkable(room, ngx, ngy, pad)) { found = { gx: ngx, gy: ngy }; break; }
+        }
+      }
+    }
+    if (found) s2 = found;
+  }
   const W = NAV_COLS, H = NAV_ROWS;
   const g = new Float64Array(W * H); g.fill(Infinity);
   const came = new Int32Array(W * H); came.fill(-1);
   const closed = new Uint8Array(W * H);
   const open = [];
-  const si = s.gy * W + s.gx;
+  const si = s2.gy * W + s2.gx;
   g[si] = 0;
-  open.push({ f: Math.hypot(s.gx - t.gx, s.gy - t.gy), gx: s.gx, gy: s.gy });
+  open.push({ f: Math.hypot(s2.gx - t.gx, s2.gy - t.gy), gx: s2.gx, gy: s2.gy });
   const dirs = [[1,0],[0,1],[-1,0],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
   const dc = [1, 1, 1, 1, 1.4142, 1.4142, 1.4142, 1.4142];
   let found = null;
@@ -377,7 +409,9 @@ function navFindPath(room, sx, sy, tx, ty) {
     for (let d = 0; d < 8; d++) {
       const nx = cur.gx + dirs[d][0], ny = cur.gy + dirs[d][1];
       if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
-      if (!navWalkable(room, nx, ny)) continue;
+      if (!navWalkable(room, nx, ny, pad)) continue;
+      // 对角移动禁止"穿角"：相邻两个轴向格都须可行（防路径斜穿障碍角卡住）
+      if (d >= 4 && (!navWalkable(room, cur.gx + dirs[d][0], cur.gy, pad) || !navWalkable(room, cur.gx, cur.gy + dirs[d][1], pad))) continue;
       const ni = ny * W + nx;
       if (closed[ni]) continue;
       const ng = g[ci] + dc[d];
@@ -572,7 +606,7 @@ function botThink(p, room, dt) {
   const px = fwdx * (tk.x - tt.x) + fwdy * (tk.y - tt.y);
   const py = -fwdx * (tk.y - tt.y) + fwdy * (tk.x - tt.x);
   const behind = px < -18;
-  const sidePos = Math.abs(py) > 20;
+  const sidePos = Math.abs(py) > 60;
   const inWeak = behind || sidePos;
   // 开火许可：反弹路径已验过（可直接打）；直线瞄准需视线清晰
   const canSee = bankAim !== null ? true : !lineBlocked;
@@ -591,9 +625,9 @@ function botThink(p, room, dt) {
     goalX = tk.x + Math.cos(angTo + ai.dodgeDir * Math.PI / 2 + (Math.random() - 0.5) * 0.35) * 200;
     goalY = tk.y + Math.sin(angTo + ai.dodgeDir * Math.PI / 2 + (Math.random() - 0.5) * 0.35) * 200;
   } else if (inWeak && dist > 140 && dist < 560) {
-    // 已在侧后：贴住压制（目标 = 玩家位置，保持距离）
-    goalX = tt.x - fwdx * 120;
-    goalY = tt.y - fwdy * 120;
+    // 已在侧后：贴住侧后位（持续绕玩家侧后，保持弱点压制角度）
+    goalX = tt.x - fwdx * 130 + sideX * ai.flankDir * 120;
+    goalY = tt.y - fwdy * 130 + sideY * ai.flankDir * 120;
   } else if (dist > 560) {
     // 远：追击（目标 = 玩家位置偏近点）
     goalX = tt.x - fwdx * 60;
@@ -607,24 +641,37 @@ function botThink(p, room, dt) {
     goalX = flankX; goalY = flankY;
   }
 
-  // 路径缓存：目标点变化 >70px 或 0.35s 超时 → 重算 A*
+  // 路径缓存：目标点变化 >70px 或 0.35s 超时 → 重算 A*（pad 42 失败则缩小到 30 重试）
   const goalMoved = !ai.path || !ai.path.length || Math.hypot(goalX - ai.goalX, goalY - ai.goalY) > 70;
   if (goalMoved || ai.pathT <= 0) {
     ai.pathT = 0.35;
     ai.goalX = goalX; ai.goalY = goalY;
-    ai.path = navFindPath(room, tk.x, tk.y, goalX, goalY);
+    ai.path = navFindPath(room, tk.x, tk.y, goalX, goalY, NAV_PAD);
+    if (!ai.path) ai.path = navFindPath(room, tk.x, tk.y, goalX, goalY, NAV_PAD_TIGHT);
     ai.wp = 0;
   }
 
   // ---- 导航执行：沿路径点走；无路径则直冲（带卡住脱困） ----
-  // 卡住检测：有油门但位移极小 0.7s → 倒车转向脱困并重算路径
-  const moved = Math.hypot(tk.x - ai.stuckPos.x, tk.y - ai.stuckPos.y);
-  ai.stuckT += dt;
-  if (moved > 25) { ai.stuckT = 0; ai.stuckPos = { x: tk.x, y: tk.y }; }
-  if (ai.stuckT > 0.7 && ai.unstickT <= 0) {
-    ai.unstickT = 0.4;
+  // 卡住检测：持续低前进速度（顶着障碍/墙角振动）0.6s → 倒车转向脱困并重算路径
+  const fwx = Math.cos(tk.a), fwy = Math.sin(tk.a);
+  const projSpeed = tk.vx * fwx + tk.vy * fwy; // 前进方向速度投影
+  if (Math.abs(projSpeed) < 10) ai.lowSpeedT = (ai.lowSpeedT || 0) + dt;
+  else ai.lowSpeedT = 0;
+  if ((ai.lowSpeedT > 0.6 || ai.stuckT > 0.7) && ai.unstickT <= 0) {
+    ai.unstickT = 0.55;
     ai.unstickDir = Math.random() < 0.5 ? 1 : -1;
+    ai.flankDir = -ai.flankDir; // 换包抄方向
     ai.path = null; // 重算
+    ai.lowSpeedT = 0;
+    ai.stuckT = 0;
+  }
+  // 路径点直线段被障碍挡住（网格与真实几何偏差）→ 立即重算路径
+  if (ai.path && ai.wp < ai.path.length) {
+    let wpBlocked = false;
+    for (const o of room.obstacles) {
+      if (segRectHit(tk.x, tk.y, ai.path[ai.wp].x, ai.path[ai.wp].y, o)) { wpBlocked = true; break; }
+    }
+    if (wpBlocked) { ai.path = null; ai.pathT = 0; }
   }
 
   if (evading) {
@@ -662,6 +709,30 @@ function botThink(p, room, dt) {
     }
   }
   if (navAng === null) navAng = Math.atan2(goalY - tk.y, goalX - tk.x); // 直冲目标
+  // A* 失败兜底：前方阻塞（或近墙）时绕行/倒车脱困（炮塔保持瞄准），避免直冲撞墙卡死
+  const sampleBlocked = (angOff) => {
+    const cx = tk.x + Math.cos(tk.a + angOff) * 110;
+    const cy = tk.y + Math.sin(tk.a + angOff) * 110;
+    for (const o of room.obstacles) {
+      if (cx > o.x && cx < o.x + o.w && cy > o.y && cy < o.y + o.h) return true;
+    }
+    return false;
+  };
+  const nearWall = tk.x < WALL_T + 80 || tk.x > WORLD.w - WALL_T - 80 || tk.y < WALL_T + 80 || tk.y > WORLD.h - WALL_T - 80;
+  if (sampleBlocked(0) || nearWall) {
+    const leftBlocked = sampleBlocked(-0.6);
+    const rightBlocked = sampleBlocked(0.6);
+    let st, th;
+    // 绕行方向优先朝目标所在侧（避免沿墙绕向远离目标的一侧）
+    const toGoal = Math.atan2(goalY - tk.y, goalX - tk.x);
+    const rel = angDiff(toGoal - tk.a);
+    if (leftBlocked && rightBlocked) { st = 0; th = -1; }
+    else if (leftBlocked) { st = 1; th = 0.55; }
+    else if (rightBlocked) { st = -1; th = 0.55; }
+    else { st = rel < -0.1 ? -1 : (rel > 0.1 ? 1 : (Math.random() < 0.5 ? 1 : -1)); th = 0.5; }
+    p.input = { thr: th, steer: st, ta: aim, shoot, boost: false };
+    return;
+  }
   const ndiff = angDiff(navAng);
   // 距离目标远 → 全速；近 → 减速（避免过冲）
   const gd = Math.hypot(goalX - tk.x, goalY - tk.y);
