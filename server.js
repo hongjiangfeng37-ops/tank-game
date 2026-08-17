@@ -26,7 +26,7 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 const WS_PATH = '/ws';
 const MAX_PLAYERS = 8;
 const TICK_MS = 1000 / 60;
-const SNAP_EVERY = 1;          // 每 tick 广播一次快照 => 60Hz（更低延迟）
+const SNAP_EVERY = 2;          // 每 2 tick 广播一次快照 => 30Hz（减半带宽/负载，60Hz 模拟不变；客户端插值平滑）
 const PING_EVERY = 20000;      // ws 心跳间隔
 const ALIVE_TIMEOUT = 90000;   // 心跳超时（宽容：手机切后台/网络抖动不误杀）
 const MAX_MSG = 1 << 20;       // 单条消息上限 1MB
