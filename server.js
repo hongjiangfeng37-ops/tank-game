@@ -1017,7 +1017,7 @@ function sim(room, dt, now) {
     if (p.input.thr === 0 && p.input.steer === 0 && !p.jammed) {
       let near = false;
       for (const q of alive) {
-        if (q.id !== p.id && Math.hypot(q.tank.x - p.tank.x, q.tank.y - p.tank.y) < 1100) { near = true; break; }
+        if (q.id !== p.id && Math.hypot(q.tank.x - p.tank.x, q.tank.y - p.tank.y) < 1500) { near = true; break; }
       }
       if (near) p.mortarT = (p.mortarT || 0) + dt;
       else p.mortarT = 0;
