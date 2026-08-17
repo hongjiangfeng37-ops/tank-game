@@ -1737,12 +1737,14 @@
       ctx.beginPath(); ctx.arc(-6, -13, 3.5, 0, Math.PI * 2); ctx.fill();
       ctx.beginPath(); ctx.arc(12, 10, 3.5, 0, Math.PI * 2); ctx.fill();
     }
-    // 炮塔座圈（基座层：比炮塔大一圈的暗色底盘，车体上）
-    ctx.fillStyle = t.ty === 'ru' ? '#1d2617' : '#2e2a1e';
-    ctx.beginPath(); ctx.arc(0, 0, 15.5, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = t.ty === 'ru' ? '#13190e' : '#221d12';
-    ctx.lineWidth = 1.4;
-    ctx.beginPath(); ctx.arc(0, 0, 15.5, 0, Math.PI * 2); ctx.stroke();
+    // 炮塔座圈（基座层：比炮塔大一圈的暗色底盘，车体上；红箭10 无炮塔座圈）
+    if (t.ty !== 'hj10') {
+      ctx.fillStyle = t.ty === 'ru' ? '#1d2617' : '#2e2a1e';
+      ctx.beginPath(); ctx.arc(0, 0, 15.5, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = t.ty === 'ru' ? '#13190e' : '#221d12';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.arc(0, 0, 15.5, 0, Math.PI * 2); ctx.stroke();
+    }
     ctx.restore();
     // 炮塔贴图（损坏时炮管歪斜）+ 炮管（长度与子弹出生点一致）
     ctx.save();
@@ -1774,27 +1776,29 @@
         ctx.beginPath(); ctx.arc(10.7, 6.8, 2.2, 0, Math.PI * 2); ctx.fill();
       }
     }
-    // 炮管（与服务器子弹出生点 34 一致，细化：防盾+两段管身+热护套卡箍+制退器）
-    // 防盾根座（连接炮塔，暗色基座）
-    ctx.fillStyle = '#2a2f3a';
-    rr(4, -4.6, 10, 9.2, 2.5); ctx.fill();
-    // 管身尾段（粗）
-    ctx.fillStyle = '#232c38';
-    rr(9, -3, 24, 6, 3); ctx.fill();
-    // 热护套（中段） + 卡箍
-    ctx.fillStyle = '#3a4656';
-    rr(14, -3.7, 17, 7.4, 3.5); ctx.fill();
-    ctx.fillStyle = '#232c38';
-    ctx.fillRect(17, -3.7, 1.6, 7.4);
-    ctx.fillRect(27, -3.7, 1.6, 7.4);
-    // 管身前段（细）
-    ctx.fillStyle = '#2b3542';
-    rr(32, -2.4, 9, 4.8, 2.2); ctx.fill();
-    // 炮口制退器
-    ctx.fillStyle = '#d8dee9';
-    rr(41, -3.4, 6.5, 6.8, 1.2); ctx.fill();
-    ctx.fillStyle = '#9aa7b8';
-    ctx.fillRect(43.5, -3.4, 1.3, 6.8);
+    // 炮管（与服务器子弹出生点 34 一致；红箭10 无炮管——发射箱贴图自带发射装置）
+    if (t.ty !== 'hj10') {
+      // 防盾根座（连接炮塔，暗色基座）
+      ctx.fillStyle = '#2a2f3a';
+      rr(4, -4.6, 10, 9.2, 2.5); ctx.fill();
+      // 管身尾段（粗）
+      ctx.fillStyle = '#232c38';
+      rr(9, -3, 24, 6, 3); ctx.fill();
+      // 热护套（中段） + 卡箍
+      ctx.fillStyle = '#3a4656';
+      rr(14, -3.7, 17, 7.4, 3.5); ctx.fill();
+      ctx.fillStyle = '#232c38';
+      ctx.fillRect(17, -3.7, 1.6, 7.4);
+      ctx.fillRect(27, -3.7, 1.6, 7.4);
+      // 管身前段（细）
+      ctx.fillStyle = '#2b3542';
+      rr(32, -2.4, 9, 4.8, 2.2); ctx.fill();
+      // 炮口制退器
+      ctx.fillStyle = '#d8dee9';
+      rr(41, -3.4, 6.5, 6.8, 1.2); ctx.fill();
+      ctx.fillStyle = '#9aa7b8';
+      ctx.fillRect(43.5, -3.4, 1.3, 6.8);
+    }
     ctx.restore();
     // 玩家标识色环（炮塔基座，保留个人颜色识别）
     ctx.fillStyle = color;
