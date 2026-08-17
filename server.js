@@ -887,6 +887,7 @@ function spawnPlayer(room, p, seat) {
   p.rapid = 0;
   p.triple = 0;
   p.mag = (TANK_TYPES[p.type] && TANK_TYPES[p.type].mag) || MAG_SIZE; // 弹匣容量（红箭10 两连发）
+  p.hjSide = 0;               // 红箭10 左右发射箱交替标记
   p.reloadT = 0;
   p.parts = { track: true, turret: true, engine: true, ammo: true, optics: true, loader: true };
   p.repairT = 0;
@@ -1145,9 +1146,16 @@ function sim(room, dt, now) {
         }
         const fire = (ang) => {
           const bspeed = tt.hjSpeed || BULLET.speed; // 红箭10 导弹极快
+          // 红箭10：左右发射架交替发射（左管一发、右管一发，弹丸从对应管口侧向偏移飞出）
+          let ox = 0;
+          if (tt.instaKill) {
+            p.hjSide = p.hjSide ? 0 : 1; // 交替标记
+            ox = (p.hjSide ? -1 : 1) * 7; // 侧向偏移（左右管）
+          }
+          const sinA = Math.sin(ang);
           room.bullets.push({
-            x: mx, y: my,
-            vx: Math.cos(ang) * bspeed, vy: Math.sin(ang) * bspeed,
+            x: mx - sinA * ox, y: my + Math.cos(ang) * ox,
+            vx: Math.cos(ang) * bspeed, vy: sinA * bspeed,
             ownerId: p.id, ownerType: p.type, pen: tt.pen, life: BULLET.life,
             spawnT: now, // 出生保护：刚出膛 200ms 内不判定命中自己（防斜射时炮口投影落入命中框吞炮弹）
             penBounces: 0, // 反弹计数（90式反弹增益用）
