@@ -70,13 +70,52 @@ const TANK_TYPES = {
     hasLoader: false,
   },
   ru: {
-    name: '俄军 T80U', maxSpeed: 205, back: 0.35, reload: 6,
+    name: '俄军 T90A', maxSpeed: 205, back: 0.35, reload: 6,
     era: 500,                                       // 爆反血量（俄军比美军多 200：300+200）
-    armor: { front: 800, side: 250, back: 700 },    // 侧面基础装甲 150→250（爆反耗尽后不纸糊）
-    armorEra: { front: 1200, side: 1050, back: 700 },  // 爆反侧面额外防护 +800（250→1050）
+    armor: { front: 800, side: 300, back: 700 },    // 侧面 250→300（T90A 加厚）
+    armorEra: { front: 1200, side: 1100, back: 700 },  // 爆反侧面 1050→1100
     pen: 750, penDrop: 200,
     ammoZone: 'side',   // 弹药架位于侧面中心
     hasLoader: true,    // 自动装弹机：损坏后装填时间翻倍
+    shtora: true,       // 窗帘主动干扰系统：正前方扇形干扰迫击炮锁定 / 反坦克导弹返回
+  },
+  il: {
+    // 以军 梅卡瓦Mk4：发动机前置（没坏时全部位 +200 装甲）；弹药架正后方（只起火不殉爆）；
+    // 炮塔损坏触发弹药架起火；专属迫击炮（静止 3s 锁定）；速度高于俄军低于美军
+    name: '以军 梅卡瓦Mk4', maxSpeed: 225, back: 0.5, reload: 4.5,
+    era: 200,                                       // 爆反血量与日军相同（200）
+    armor: { front: 600, side: 250, back: 450 },    // 基础装甲（发动机损坏后）
+    armorEra: { front: 850, side: 800, back: 450 }, // 爆反加成比美军少 50（正面+250 侧面+550 背面不变；不含发动机+200）
+    pen: 550, penDrop: 100,
+    ammoZone: 'rear',   // 弹药架位于正后方（只起火不殉爆）
+    engineFront: true,  // 发动机前置：没坏时全部位装甲 +200
+    noDirectDet: true,  // 无法被直接殉爆击杀（弹药架只起火）
+    mortar: true,       // 专属迫击炮（静止锁定 + 扣 30% 爆反）
+    hasLoader: false,
+  },
+  cn: {
+    // 中国 99B主战坦克：全场最高机动；主动防御系统（2 次充能，抵挡一次攻击/开启 10s，用完冷却 60s 恢复）；
+    // 侧面弹药架被击穿直接殉爆（无爆反保护）；爆反额外 +450 装甲
+    name: '中国 99B主战坦克', maxSpeed: 290, back: 0.8, reload: 5,
+    era: 400,                                       // 爆反血量
+    armor: { front: 1000, side: 150, back: 650 },   // 基础装甲
+    armorEra: { front: 1450, side: 600, back: 1100 }, // 爆反时每部位 +450
+    pen: 850, penDrop: 50,
+    ammoZone: 'side',   // 侧面弹药架：被击穿就殉爆（无 ruSideSafe 保护）
+    aps: true,          // 主动防御系统（护盾 2 次充能）
+    hasLoader: false,
+  },
+  de: {
+    // 欧盟 豹二A6主战坦克：装甲/爆反与美军相同；弹药架机制与日军相同（尾舱殉爆 + 前置弹药架起火）；
+    // 穿深 800，反弹一次不扣穿深，但最多反弹 2 次后消失
+    name: '欧盟 豹二A6主战坦克', maxSpeed: 270, back: 0.8, reload: 5,
+    era: 300,                                       // 与美军相同
+    armor: { front: 600, side: 200, back: 400 },
+    armorEra: { front: 900, side: 800, back: 400 },
+    pen: 800, penDrop: 0, penBounceMax: 2,          // 反弹不扣穿深，最多 2 次
+    ammoZone: 'rear',   // 尾舱弹药架：直接殉爆（同美军/日军）
+    frontAmmoFire: true, // 前置弹药架：正面击穿起火（同日军机制）
+    hasLoader: false,
   },
   jp: {
     name: '日军 90式主战坦克', maxSpeed: 280, back: 0.6, reload: 3,
@@ -89,13 +128,18 @@ const TANK_TYPES = {
     hasLoader: false,
   },
 };
-// 反弹后的穿深处理：普通坦克扣穿深；90式反弹增加穿深（最高 9 次后消失）；返回 true = 子弹消失
+// 反弹后的穿深处理：普通坦克扣穿深；90式反弹增加穿深（最高 9 次后消失）；豹二反弹不扣穿深（最多 2 次后消失）
 // 用炮弹上固化的 ownerType 判断（不查 room.players——射手离场后仍按原类型处理，杜绝机制混淆）
 function applyBouncePen(b, room) {
   const bt = TANK_TYPES[b.ownerType];
   if (bt && bt.penGain) {
     b.penBounces = (b.penBounces || 0) + 1;
     b.pen += bt.penGain;
+    return b.penBounces >= bt.penBounceMax;
+  }
+  if (bt && bt.penBounceMax && bt.penDrop === 0) {
+    // 豹二：反弹不扣穿深，仅计数，最多反弹 2 次
+    b.penBounces = (b.penBounces || 0) + 1;
     return b.penBounces >= bt.penBounceMax;
   }
   const penDrop = bt ? bt.penDrop : 100;
@@ -836,6 +880,18 @@ function spawnPlayer(room, p, seat) {
   p.fireT = 0;
   p.fireDmg = 0;
   p.era = initialEra(p.type);         // 反应装甲按型号重置
+  // 梅卡瓦迫击炮 / T90A 干扰 / 反坦克导弹
+  p.mortarT = 0;        // 迫击炮锁定进度（静止累计，3s 完成）
+  p.mortarCd = 0;       // 迫击炮冷却
+  p.mortarShot = null;  // 迫击炮落点 {x,y,t,id}
+  p.jammed = false;     // 被窗帘干扰（锁定被打断）
+  p.jamOn = false;      // T90A 干扰激活（扇形内有目标）
+  p.atgm = 0;           // 反坦克导弹弹药（拾取 1 发）
+  // 99B 主动防御系统（APS）：2 次充能、开启抵挡一次攻击、10s 后消失、用完冷却 60s 恢复
+  p.apsN = 2;           // 剩余充能
+  p.apsOn = false;      // 激活中（抵挡下一次攻击）
+  p.apsT = 0;           // 激活剩余秒
+  p.apsCd = 0;          // 冷却剩余秒（两次用完开始）
 }
 
 function startRound(room) {
@@ -913,6 +969,77 @@ function sim(room, dt, now) {
   const list = [...room.players.values()];
   const alive = [];
   for (const p of list) if (p.alive && p.tank) alive.push(p);
+
+  // ---- 99B 主动防御系统：激活计时（10s 后消失）+ 冷却恢复（用完 2 次后 60s 恢复）；炮塔损坏则失效 ----
+  for (const p of alive) {
+    if (!TANK_TYPES[p.type] || !TANK_TYPES[p.type].aps) continue;
+    if (p.apsOn) {
+      if (!p.parts.turret) { p.apsOn = false; p.apsT = 0; } // 炮塔损坏：主动防御失效
+      else {
+        p.apsT -= dt;
+        if (p.apsT <= 0) { p.apsOn = false; p.apsT = 0; }
+      }
+    }
+    if (p.apsN === 0 && p.apsCd <= 0) p.apsCd = 60; // 两次用完才开始 60s 冷却
+    if (p.apsCd > 0) {
+      p.apsCd -= dt;
+      if (p.apsCd <= 0) { p.apsN = 2; room.pendingEvents.push({ k: 'aps', id: p.id, n: 2, cd: 0 }); }
+    }
+  }
+
+  // ---- T90A 窗帘干扰：炮塔前方扇形（±50°、700px）检测 ----
+  // 干扰范围内：梅卡瓦迫击炮锁定被打断；反坦克导弹原路返回；干扰激活时 jamOn（客户端红眼发光）
+  for (const p of alive) {
+    p.jamOn = false;
+    p.jammed = false;
+    const jt = TANK_TYPES[p.type];
+    if (!jt || !jt.shtora) continue;
+    const jk = p.tank;
+    const jca = Math.cos(jk.ta), jsa = Math.sin(jk.ta);
+    for (const q of alive) {
+      if (q.id === p.id) continue;
+      const dx = q.tank.x - jk.x, dy = q.tank.y - jk.y;
+      const d = Math.hypot(dx, dy);
+      if (d > 700 || d < 1) continue;
+      if ((dx * jca + dy * jsa) / d > Math.cos(Math.PI * 0.28)) { // 夹角 < 50°
+        p.jamOn = true;
+        q.jammed = true;
+        if (TANK_TYPES[q.type] && TANK_TYPES[q.type].mortar) q.mortarT = 0; // 打断梅卡瓦锁定
+      }
+    }
+  }
+
+  // ---- 梅卡瓦迫击炮锁定：静止 3s + 周围有敌人（900px）+ 未被干扰 ----
+  for (const p of alive) {
+    const mt = TANK_TYPES[p.type];
+    if (!mt || !mt.mortar) continue;
+    if (p.mortarCd > 0) p.mortarCd -= dt;
+    if (p.input.thr === 0 && p.input.steer === 0 && !p.jammed) {
+      let near = false;
+      for (const q of alive) {
+        if (q.id !== p.id && Math.hypot(q.tank.x - p.tank.x, q.tank.y - p.tank.y) < 1100) { near = true; break; }
+      }
+      if (near) p.mortarT = (p.mortarT || 0) + dt;
+      else p.mortarT = 0;
+    } else {
+      p.mortarT = 0;
+    }
+    if (p.mortarT > 3) p.mortarT = 3;
+    // 迫击炮落点爆炸（延迟 1.2s，无视地形）
+    if (p.mortarShot && now >= p.mortarShot.t) {
+      const q = room.players.get(p.mortarShot.id);
+      if (q && q.alive && q.tank) {
+        const dd = Math.hypot(q.tank.x - p.mortarShot.x, q.tank.y - p.mortarShot.y);
+        if (dd < 90) {
+          const lost = Math.ceil(q.era * 0.3); // 扣 30% 爆反血条
+          q.era = Math.max(0, q.era - lost);
+          room.pendingEvents.push({ k: 'mhit', id: q.id, x: Math.round(p.mortarShot.x), y: Math.round(p.mortarShot.y), era: q.era });
+        }
+      }
+      room.pendingEvents.push({ k: 'mboom', x: Math.round(p.mortarShot.x), y: Math.round(p.mortarShot.y) });
+      p.mortarShot = null;
+    }
+  }
 
   // ---- 坦克移动 / 开火 ----
   for (const p of alive) {
@@ -1071,17 +1198,39 @@ function sim(room, dt, now) {
     // 反弹穿深处理（普通扣穿深；90式反弹+100穿深，最多 9 次）
     const bDead = () => applyBouncePen(b, room);
 
-    // 边界反弹
-    if (!dead && b.x < WALL_T + BULLET.r) { b.x = WALL_T + BULLET.r; b.vx = -b.vx; if (bDead()) dead = true; }
-    if (!dead && b.x > WORLD.w - WALL_T - BULLET.r) { b.x = WORLD.w - WALL_T - BULLET.r; b.vx = -b.vx; if (bDead()) dead = true; }
-    if (!dead && b.y < WALL_T + BULLET.r) { b.y = WALL_T + BULLET.r; b.vy = -b.vy; if (bDead()) dead = true; }
-    if (!dead && b.y > WORLD.h - WALL_T - BULLET.r) { b.y = WORLD.h - WALL_T - BULLET.r; b.vy = -b.vy; if (bDead()) dead = true; }
+    // 反坦克导弹（ATGM）：慢速直线，撞墙/障碍即消失（不反弹）；进入 T90A 窗帘扇形 → 原路返回
+    if (!dead && b.isAtgm) {
+      // 干扰检测：任一 T90A 炮塔前方扇形（±50°、700px）
+      for (const p of alive) {
+        const jt = TANK_TYPES[p.type];
+        if (!jt || !jt.shtora || b.returned) continue;
+        const jk = p.tank;
+        const dx = b.x - jk.x, dy = b.y - jk.y;
+        const d = Math.hypot(dx, dy);
+        if (d > 700 || d < 1) continue;
+        if ((dx * Math.cos(jk.ta) + dy * Math.sin(jk.ta)) / d > Math.cos(Math.PI * 0.28)) {
+          b.vx = -b.vx; b.vy = -b.vy; // 不受控制原路返回
+          b.returned = true;
+          room.pendingEvents.push({ k: 'jam', id: b.ownerId, x: Math.round(b.x), y: Math.round(b.y) });
+          break;
+        }
+      }
+      if (b.x < WALL_T + BULLET.r || b.x > WORLD.w - WALL_T - BULLET.r ||
+          b.y < WALL_T + BULLET.r || b.y > WORLD.h - WALL_T - BULLET.r) { dead = true; }
+    }
 
-    // 障碍碰撞：线段检测（防高速隧穿穿墙），仅在真正撞击表面时反弹并消耗穿深
+    // 边界反弹
+    if (!dead && !b.isAtgm && b.x < WALL_T + BULLET.r) { b.x = WALL_T + BULLET.r; b.vx = -b.vx; if (bDead()) dead = true; }
+    if (!dead && !b.isAtgm && b.x > WORLD.w - WALL_T - BULLET.r) { b.x = WORLD.w - WALL_T - BULLET.r; b.vx = -b.vx; if (bDead()) dead = true; }
+    if (!dead && !b.isAtgm && b.y < WALL_T + BULLET.r) { b.y = WALL_T + BULLET.r; b.vy = -b.vy; if (bDead()) dead = true; }
+    if (!dead && !b.isAtgm && b.y > WORLD.h - WALL_T - BULLET.r) { b.y = WORLD.h - WALL_T - BULLET.r; b.vy = -b.vy; if (bDead()) dead = true; }
+
+    // 障碍碰撞：线段检测（防高速隧穿穿墙），仅在真正撞击表面时反弹并消耗穿深（ATGM 撞障碍消失）
     if (!dead) {
       for (const o of room.obstacles) {
         const hit = segRectHit(px, py, b.x, b.y, o);
         if (hit) {
+          if (b.isAtgm) { dead = true; break; } // ATGM 撞障碍即消失（不反弹不穿墙）
           b.x = hit.x; b.y = hit.y;
           const vn = b.vx * hit.nx + b.vy * hit.ny;
           if (vn < 0) {
@@ -1132,6 +1281,11 @@ function sim(room, dt, now) {
           if (q.shield) {
             q.shield = false;
             room.pendingEvents.push({ k: 'shield', id: q.id, x: Math.round(t2.x), y: Math.round(t2.y) });
+          } else if (q.apsOn) {
+            // 99B 主动防御系统：抵挡本次攻击（护盾效果，10s 内第一次命中被抵挡）
+            q.apsOn = false;
+            q.apsT = 0;
+            room.pendingEvents.push({ k: 'apsblock', id: q.id, x: Math.round(t2.x), y: Math.round(t2.y) });
           } else {
             const tt = TANK_TYPES[q.type];
             // 部位判定：命中点在车体的前后/侧面位置（与贴图视觉一致）
@@ -1146,26 +1300,32 @@ function sim(room, dt, now) {
               ? (rx < -13 && Math.abs(ry) < 13)   // 美军：炮塔尾舱（车体后部中央偏窄）
               : (Math.abs(ry) > 17 && Math.abs(rx) < 16 && !ruSideSafe); // 俄军：侧面中心（爆反≥30%不殉爆）
             if (ammoHit) {
-              // 弹药架殉爆：先起火再殉爆（起火视觉效果），立即击毁（弱点命中无视反应装甲）
+              // 弹药架命中：美军/90式 直接殉爆；梅卡瓦（noDirectDet）只起火不殉爆（难以爆炸）
               q.fireT = FIRE_TIME;
               q.fireDmg = 0;
-              room.pendingEvents.push({ k: 'fire', id: q.id, x: Math.round(t2.x), y: Math.round(t2.y) });
-              q.alive = false;
-              q.deadAt = now;
-              const killer = room.players.get(b.ownerId);
-              if (killer && killer.id !== q.id) {
-                killer.kills++;
-                room.pendingEvents.push({ k: 'kill', killer: killer.name, victim: q.name, reason: '殉爆', x: Math.round(t2.x), y: Math.round(t2.y) });
+              if (tt.noDirectDet) {
+                q.ammoFire = true;
+                room.pendingEvents.push({ k: 'fire', id: q.id, x: Math.round(t2.x), y: Math.round(t2.y), am: true });
+              } else {
+                room.pendingEvents.push({ k: 'fire', id: q.id, x: Math.round(t2.x), y: Math.round(t2.y) });
+                q.alive = false;
+                q.deadAt = now;
+                const killer = room.players.get(b.ownerId);
+                if (killer && killer.id !== q.id) {
+                  killer.kills++;
+                  room.pendingEvents.push({ k: 'kill', killer: killer.name, victim: q.name, reason: '殉爆', x: Math.round(t2.x), y: Math.round(t2.y) });
+                }
+                room.pendingEvents.push({ k: 'boom', x: Math.round(t2.x), y: Math.round(t2.y) });
               }
-              room.pendingEvents.push({ k: 'boom', x: Math.round(t2.x), y: Math.round(t2.y) });
             } else {
               // 爆反血条：本回合首次被命中扣 40-70 随机，之后每次扣 20-40 随机
               const eraFirstHit = !q.eraHit; // 本回合是否首次被命中
               q.eraHit = true;
               const eraCost = eraFirstHit ? (40 + Math.floor(Math.random() * 31)) : (20 + Math.floor(Math.random() * 21));
               if (q.era > 0) q.era = Math.max(0, q.era - eraCost);
-              // 装甲厚度判定：爆反生效时正面/侧面增强（背面不变）
-              const armor = (q.era > 0 ? tt.armorEra : tt.armor)[zone];
+              // 装甲厚度判定：爆反生效时正面/侧面增强（背面不变）；梅卡瓦发动机前置：没坏时全部位 +200
+              let armor = (q.era > 0 ? tt.armorEra : tt.armor)[zone];
+              if (tt.engineFront && q.parts.engine) armor += 200;
               const ratio = b.pen / armor;
               const brokenParts = [];
               const breakOne = (pool) => {
@@ -1175,12 +1335,25 @@ function sim(room, dt, now) {
                 q.parts[pick] = false;
                 brokenParts.push(pick);
               };
+              // 梅卡瓦联动：炮塔损坏 → 一并触发弹药架起火（额外弹药架在炮塔内部）
+              const turretFireHook = () => {
+                if (q.type === 'il' && q.parts.turret === false && q.alive) {
+                  q.fireT = FIRE_TIME;
+                  q.fireDmg = 0;
+                  q.ammoFire = true;
+                  room.pendingEvents.push({ k: 'fire', id: q.id, x: Math.round(t2.x), y: Math.round(t2.y), am: true });
+                }
+              };
               if (ratio >= 1.0) {
                 // 完全击穿：全伤害 + 随机其他部位模块 + 起火/殉爆概率
                 t2.hp -= dmg;
                 q.lastHitBy = b.ownerId;
                 // 随机损坏一个模块（美军无装弹机，排除 loader；模块损坏只在击穿时发生，跳弹一律不坏）
                 let avail = PARTS_LIST.filter((n) => q.parts[n] && (q.type === 'ru' || n !== 'loader'));
+                // 梅卡瓦：正面爆反未耗尽时发动机不可损坏（前置发动机保护）
+                if (q.type === 'il' && zone === 'front' && q.era > 0) {
+                  avail = avail.filter((n) => n !== 'engine');
+                }
                 // 90式机制：前置弹药架——爆反不满血时正面击穿 50% 弹药架起火（有爆反满血时不会被击穿起火）
                 if (q.type === 'jp' && zone === 'front' && q.era < tt.era && Math.random() < 0.5) {
                   q.fireT = FIRE_TIME;
@@ -1190,14 +1363,29 @@ function sim(room, dt, now) {
                 } else if (q.type === 'us' && zone === 'front' && q.era < tt.era && q.parts.turret && Math.random() < 0.3) {
                   q.parts.turret = false;
                   brokenParts.push('turret');
+                  turretFireHook();
                 } else if (q.type === 'us' && zone === 'side' && q.parts.turret && Math.random() < 0.4) {
                   // 美军侧面击穿：40% 优先坏炮塔（侧面不再只坏无关紧要的模块）
                   q.parts.turret = false;
                   brokenParts.push('turret');
+                } else if (q.type === 'il' && zone === 'side') {
+                  // 梅卡瓦侧面：容易坏炮塔和发动机（50%/30% 优先，其余随机）
+                  const pool = ['turret', 'engine', 'track', 'ammo', 'optics'].filter((n) => q.parts[n]);
+                  if (pool.length) {
+                    const r = Math.random();
+                    let pick;
+                    if (r < 0.5 && q.parts.turret) pick = 'turret';
+                    else if (r < 0.8 && q.parts.engine) pick = 'engine';
+                    else pick = pool[rnd(pool.length)];
+                    q.parts[pick] = false;
+                    brokenParts.push(pick);
+                    turretFireHook();
+                  }
                 } else if (avail.length) {
                   const pick = avail[rnd(avail.length)];
                   q.parts[pick] = false;
                   brokenParts.push(pick);
+                  if (pick === 'turret') turretFireHook();
                 }
                 // 观瞄随机附加损坏
                 if (q.parts.optics && Math.random() < 0.15) { q.parts.optics = false; brokenParts.push('optics'); }
@@ -1208,9 +1396,10 @@ function sim(room, dt, now) {
                   q.fireDmg = 0;
                   room.pendingEvents.push({ k: 'fire', id: q.id, x: Math.round(t2.x), y: Math.round(t2.y) });
                 }
-                // 殉爆（非弱点区域）：俄军爆反≥30%时侧面不殉爆；其余按爆反状态与部位
+                // 殉爆（非弱点区域）：俄军爆反≥30%时侧面不殉爆；梅卡瓦无法被直接殉爆（任何部位都不殉爆）；其余按爆反状态与部位
                 let detChance = zone === 'side' ? (q.era > 0 ? 0.03 : 0.15) : (zone === 'back' ? (q.era > 0 ? 0.1 : 0.4) : 0);
                 if (q.type === 'ru' && zone === 'side' && eraBefore >= tt.era * 0.3) detChance = 0; // 俄军爆反保护
+                if (tt.noDirectDet) detChance = 0; // 梅卡瓦：弹药架只起火，无法直接殉爆
                 if (zone !== 'front' && Math.random() < detChance) {
                   q.alive = false;
                   q.deadAt = now;
@@ -1253,10 +1442,23 @@ function sim(room, dt, now) {
                     breakOne(['engine']);
                   }
                 } else {
-                  // 侧面：美军 track/turret 随机（履带已坏时仍能坏炮塔，提高"坏东西"概率）
+                  // 侧面：美军 track/turret 随机；梅卡瓦 track/turret/engine 随机（容易坏炮塔和发动机）
                   if (q.type === 'us') {
                     if (Math.random() < 0.5) breakOne(['track']);
                     else breakOne(['turret']);
+                  } else if (q.type === 'il') {
+                    const pool = ['track', 'turret', 'engine'].filter((n) => q.parts[n]);
+                    if (pool.length) {
+                      const pick = pool[rnd(pool.length)];
+                      q.parts[pick] = false;
+                      brokenParts.push(pick);
+                      if (pick === 'turret') {
+                        q.fireT = FIRE_TIME;
+                        q.fireDmg = 0;
+                        q.ammoFire = true;
+                        room.pendingEvents.push({ k: 'fire', id: q.id, x: Math.round(t2.x), y: Math.round(t2.y), am: true });
+                      }
+                    }
                   } else {
                     breakOne(['track']);
                   }
@@ -1291,7 +1493,7 @@ function sim(room, dt, now) {
   room.pupTimer -= dt;
   if (room.pupTimer <= 0 && room.pups.length < POWERUP.max) {
     room.pupTimer = POWERUP.spawnEvery;
-    const type = ['health', 'shield', 'rapid', 'triple'][weightedPick([0.34, 0.24, 0.21, 0.21])];
+    const type = ['health', 'shield', 'rapid', 'triple', 'atgm'][weightedPick([0.30, 0.20, 0.18, 0.18, 0.14])];
     for (let tries = 0; tries < 40; tries++) {
       const x = WALL_T + 70 + Math.random() * (WORLD.w - 2 * (WALL_T + 70));
       const y = WALL_T + 70 + Math.random() * (WORLD.h - 2 * (WALL_T + 70));
@@ -1317,6 +1519,7 @@ function sim(room, dt, now) {
         else if (pu.type === 'shield') p.shield = true;
         else if (pu.type === 'rapid') p.rapid = 8;
         else if (pu.type === 'triple') p.triple = 8;
+        else if (pu.type === 'atgm') p.atgm = 1; // 反坦克导弹：拾取 1 发（无时间限制）
         room.pendingEvents.push({ k: 'pick', type: pu.type, x: Math.round(tk.x), y: Math.round(tk.y) });
         break;
       }
@@ -1485,6 +1688,12 @@ function broadcast(room) {
       rp: Math.round(p.repairT * 10) / 10,
       fr: p.fireT > 0 ? Math.ceil(p.fireT) : 0,
       am: p.ammoFire ? 1 : 0, // 弹药架起火标记（客户端剧烈火焰特效）
+      mt: TANK_TYPES[p.type] && TANK_TYPES[p.type].mortar ? Math.round(p.mortarT * 10) / 10 : 0, // 迫击炮锁定进度 0-3
+      ag: p.atgm || 0,      // 反坦克导弹持有数
+      jm: p.jamOn ? 1 : 0,  // T90A 窗帘干扰激活（红眼发光）
+      ap: TANK_TYPES[p.type] && TANK_TYPES[p.type].aps ? p.apsN : 0, // 99B 主动防御充能
+      apo: p.apsOn ? Math.ceil(p.apsT) : 0, // 主动防御激活剩余秒
+      apc: p.apsCd > 0 ? Math.ceil(p.apsCd) : 0, // 主动防御冷却剩余秒
       kills: p.kills, wins: p.wins,
     };
   });
@@ -1500,6 +1709,7 @@ function broadcast(room) {
       vx: Math.round(b.vx), vy: Math.round(b.vy),
       o: b.ownerId,
       pen: Math.round(b.pen),
+      ag: b.isAtgm ? 1 : 0, // 反坦克导弹标记（客户端样式）
     })),
     pups: room.pups.map((pu) => ({ x: Math.round(pu.x), y: Math.round(pu.y), type: pu.type, life: Math.round(pu.life) })),
     events: room.pendingEvents.splice(0),
@@ -1575,6 +1785,58 @@ function onMessage(conn, buf) {
       startRound(room);
       break;
     }
+    case 'aps': {
+      // 99B 主动防御系统：主动开启（需要充能，未激活，非冷却中，炮塔完好）
+      if (!p || !p.room || p.room.phase !== 'play' || !p.alive) break;
+      const room = p.room;
+      const at = TANK_TYPES[p.type];
+      if (!at || !at.aps) break;
+      if (p.apsN <= 0 || p.apsOn || p.apsCd > 0 || !p.parts.turret) break; // 炮塔损坏无法开启
+      p.apsN--;
+      p.apsOn = true;
+      p.apsT = 10; // 开启 10 秒后消失（或被命中抵挡一次）
+      room.pendingEvents.push({ k: 'aps', id: p.id, n: p.apsN, on: 1 });
+      break;
+    }
+    case 'mfire': {
+      // 梅卡瓦专属迫击炮：锁定完成（静止 3s + 周围有敌人 + 未被干扰）才可发射
+      if (!p || !p.room || p.room.phase !== 'play' || !p.alive) break;
+      const room = p.room;
+      const mt = TANK_TYPES[p.type];
+      if (!mt || !mt.mortar) break;
+      if (p.mortarT < 3 || p.mortarCd > 0 || p.jammed) break;
+      p.mortarCd = 8; // 冷却 8s
+      p.mortarT = 0;
+      // 锁定最近的敌人（当前位置为落点，无视地形，1.2s 后爆炸）
+      let target = null, best = 1e9;
+      for (const q of p.room.players.values()) {
+        if (q.id !== p.id && q.alive && q.tank) {
+          const d = Math.hypot(q.tank.x - p.tank.x, q.tank.y - p.tank.y);
+          if (d < best) { best = d; target = q; }
+        }
+      }
+      if (!target) break;
+      p.mortarShot = { x: target.tank.x, y: target.tank.y, t: Date.now() + 1200, id: target.id };
+      room.pendingEvents.push({ k: 'mshot', id: p.id, x: Math.round(p.tank.x), y: Math.round(p.tank.y), tx: Math.round(target.tank.x), ty: Math.round(target.tank.y) });
+      break;
+    }
+    case 'atgm': {
+      // 反坦克导弹：拾取后发射一次（慢速直线，穿深 1500）
+      if (!p || !p.room || p.room.phase !== 'play' || !p.alive || p.atgm <= 0) break;
+      if (!p.tank) break;
+      p.atgm = 0;
+      const tk = p.tank;
+      const mx = tk.x + Math.cos(tk.ta) * 40, my = tk.y + Math.sin(tk.ta) * 40;
+      room.bullets.push({
+        x: mx, y: my,
+        vx: Math.cos(tk.ta) * 260, vy: Math.sin(tk.ta) * 260, // 慢速
+        ownerId: p.id, ownerType: p.type, pen: 1500, life: 8,
+        spawnT: Date.now(), penBounces: 0,
+        isAtgm: true, // 反坦克导弹：直线、撞墙消失、可被窗帘干扰返回
+      });
+      room.pendingEvents.push({ k: 'atgm', id: p.id, x: Math.round(mx), y: Math.round(my) });
+      break;
+    }
     case 'ping': {
       const ts = Number(msg.ts);
       if (Number.isFinite(ts)) send(conn, { t: 'pong', ts });
@@ -1583,11 +1845,11 @@ function onMessage(conn, buf) {
     case 'pick': {
       // 大厅中选择坦克型号
       if (!p || !p.room || p.room.phase !== 'lobby') break;
-      if (msg.type === 'us' || msg.type === 'ru' || msg.type === 'jp') {
+      if (msg.type === 'us' || msg.type === 'ru' || msg.type === 'jp' || msg.type === 'il' || msg.type === 'cn' || msg.type === 'de') {
         p.type = msg.type;
         p.era = initialEra(msg.type);
-        // 单人模式：AI 自动选择与玩家相反的型号（us↔ru；jp 的对手选 ru）
-        const opposite = { us: 'ru', ru: 'us', jp: 'ru' }[msg.type];
+        // 单人模式：AI 自动选择与玩家相反的型号（us↔ru；其余对手选 ru）
+        const opposite = { us: 'ru', ru: 'us', jp: 'ru', il: 'ru', cn: 'ru', de: 'ru' }[msg.type];
         for (const q of p.room.players.values()) {
           if (q.isBot && q.type === msg.type) {
             q.type = opposite;
