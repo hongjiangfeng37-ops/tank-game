@@ -74,7 +74,7 @@ const TANK_TYPES = {
     era: 500,                                       // 爆反血量（俄军比美军多 200：300+200）
     armor: { front: 800, side: 300, back: 700 },    // 侧面 250→300（T90A 加厚）
     armorEra: { front: 1200, side: 1100, back: 700 },  // 爆反侧面 1050→1100
-    pen: 750, penDrop: 200,
+    pen: 800, penDrop: 200,   // 穿深与美军 M1 同级（800）
     ammoZone: 'side',   // 弹药架位于侧面中心
     hasLoader: true,    // 自动装弹机：损坏后装填时间翻倍
     shtora: true,       // 窗帘主动干扰系统：正前方扇形干扰迫击炮锁定 / 反坦克导弹返回
@@ -1752,6 +1752,7 @@ function broadcast(room) {
       pen: Math.round(b.pen),
       ag: b.isAtgm ? 1 : 0, // 反坦克导弹标记（客户端样式）
       hj: b.isHj ? 1 : 0,   // 红箭10 导弹标记（客户端长拖尾渲染）
+      r: b.returned ? 1 : 0, // 被干扰返回标记（客户端返回动画）
       i: b.id,              // 唯一 id（客户端插值）
     })),
     pups: room.pups.map((pu) => ({ x: Math.round(pu.x), y: Math.round(pu.y), type: pu.type, life: Math.round(pu.life) })),
