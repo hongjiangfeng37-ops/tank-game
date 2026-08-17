@@ -1993,6 +1993,18 @@
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'start' }));
   });
   // 选坦克（大厅）
+  const TANK_INFO = {
+    us: '<b>🇺🇸 美军 M1A1</b>　<span class="ti-spec">穿深800(反弹-100)｜装甲600/200/400｜爆反+300｜装填4s</span><br>⚠ 尾舱弹药架被击中必殉爆｜快移速快装填',
+    ru: '<b>🇷🇺 俄军 T90A</b>　<span class="ti-spec">穿深750(反弹-200)｜装甲800/300/700｜爆反+500｜装填6s</span><br>📡 窗帘干扰：炮塔前方扇形打断迫击炮锁定/导弹原路返回（红眼发光警示）｜侧面弹药架（爆反≥30%保护）',
+    jp: '<b>🇯🇵 日军 90式</b>　<span class="ti-spec">穿深500(反弹+200)｜装甲550/150/250｜爆反+200｜装填3s</span><br>💥 反弹穿深递增最多9次｜尾舱殉爆+前置弹药架起火(50%)',
+    il: '<b>🇮🇱 以军 梅卡瓦Mk4</b>　<span class="ti-spec">穿深550｜装甲600/250/450(发动机+200)｜爆反+200｜装填4.5s</span><br>🔧 发动机前置装甲加成｜弹药架只起火不殉爆｜炮塔坏连带起火｜💣 迫击炮(静止3s锁定扣30%爆反，1/2键切换)',
+    cn: '<b>🇨🇳 中国 99B</b>　<span class="ti-spec">穿深850(反弹-50)｜装甲1000/150/650｜爆反+450｜装填5s</span><br>🛡️ 主动防御E(2次抵挡/60s恢复，炮塔坏失效)｜侧面弹药架必殉爆｜全场最快',
+    de: '<b>🇪🇺 欧盟 豹二A6</b>　<span class="ti-spec">穿深800(反弹不扣)｜装甲600/200/400｜爆反+300｜装填5s</span><br>💥 反弹不扣穿深但仅2次｜尾舱殉爆+前置弹药架起火',
+  };
+  const tankInfoEl = document.getElementById('tankInfo');
+  function showTankInfo(type) {
+    if (tankInfoEl) tankInfoEl.innerHTML = TANK_INFO[type] || '';
+  }
   function pickTank(type) {
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'pick', type }));
     els.tpUs.classList.toggle('sel-us', type === 'us');
@@ -2001,6 +2013,7 @@
     if (els.tpIl) els.tpIl.classList.toggle('sel-il', type === 'il');
     if (els.tpCn) els.tpCn.classList.toggle('sel-cn', type === 'cn');
     if (els.tpDe) els.tpDe.classList.toggle('sel-de', type === 'de');
+    showTankInfo(type);
   }
   els.tpUs.addEventListener('click', () => pickTank('us'));
   els.tpRu.addEventListener('click', () => pickTank('ru'));
@@ -2008,6 +2021,7 @@
   if (els.tpIl) els.tpIl.addEventListener('click', () => pickTank('il'));
   if (els.tpCn) els.tpCn.addEventListener('click', () => pickTank('cn'));
   if (els.tpDe) els.tpDe.addEventListener('click', () => pickTank('de'));
+  showTankInfo('us'); // 默认展示美军介绍
   function leaveRoom() {
     intentionalClose = true;
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'leave' }));
