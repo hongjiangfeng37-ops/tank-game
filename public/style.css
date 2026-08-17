@@ -182,11 +182,12 @@ button.mini:hover { border-color: #4fc3f7; }
 #lobbyLink { font-size: 12px; color: #7e92b8; word-break: break-all; margin-bottom: 6px; }
 #tankPick { margin: 10px 0; }
 .tpTitle { font-size: 12px; color: #8fa3c8; margin-bottom: 6px; letter-spacing: 1px; }
-.tpCards { display: flex; gap: 8px; }
+.tpCards { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
 .tpCard {
-  flex: 1; display: flex; flex-direction: column; gap: 4px; padding: 8px 10px;
-  border-radius: 10px; border: 2px solid #2a3a5c; background: #101828;
-  color: #c6d4ee; font-size: 12px; text-align: left; cursor: pointer; transition: all .15s;
+  padding: 7px 10px;
+  border-radius: 9px; border: 2px solid #2a3a5c; background: #101828;
+  color: #c6d4ee; font-size: 12px; text-align: center; cursor: pointer; transition: all .15s;
+  white-space: nowrap;
 }
 .tpCard:hover { border-color: #4fc3f7; }
 .tpCard.sel-us { border-color: #4caf50; background: rgba(76, 175, 80, 0.12); }
@@ -195,8 +196,14 @@ button.mini:hover { border-color: #4fc3f7; }
 .tpCard.sel-il { border-color: #4dd0e1; background: rgba(77, 208, 225, 0.12); }
 .tpCard.sel-cn { border-color: #ffd54f; background: rgba(255, 213, 79, 0.12); }
 .tpCard.sel-de { border-color: #90a4ae; background: rgba(144, 164, 174, 0.12); }
-.tpName { font-size: 14px; font-weight: bold; color: #fff; }
-.tpSpec { color: #7e92b8; line-height: 1.5; }
+.tpName { font-size: 13px; font-weight: bold; color: #fff; }
+/* 坦克介绍公告 */
+#tankInfo {
+  margin-top: 8px; padding: 8px 12px; text-align: left;
+  border: 1px solid #2a3a5c; border-radius: 9px; background: rgba(16, 24, 40, 0.75);
+  color: #9db1d6; font-size: 12px; line-height: 1.7; min-height: 60px;
+}
+#tankInfo b { color: #fff; }
 #lobbyHint { font-size: 12px; color: #7e92b8; margin-top: 10px; }
 
 /* ---------- 局域网房间列表 ---------- */
