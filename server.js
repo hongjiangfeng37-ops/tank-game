@@ -90,7 +90,7 @@ const TANK_TYPES = {
     ammoZone: 'rear',   // 弹药架位于正后方（只起火不殉爆）
     engineFront: true,  // 发动机前置：没坏时全部位装甲 +200
     noDirectDet: true,  // 无法被直接殉爆击杀（弹药架只起火）
-    mortar: true,       // 专属迫击炮（静止锁定 + 扣 30% 爆反）
+    mortar: true,       // 专属迫击炮（按 2 切换，穿墙直射弹丸，30s 冷却，命中扣 30% 爆反 + 100 穿深）
     hasLoader: false,
   },
   cn: {
@@ -881,9 +881,8 @@ function spawnPlayer(room, p, seat) {
   p.fireDmg = 0;
   p.era = initialEra(p.type);         // 反应装甲按型号重置
   // 梅卡瓦迫击炮 / T90A 干扰 / 反坦克导弹
-  p.mortarT = 0;        // 迫击炮锁定进度（静止累计，3s 完成）
-  p.mortarCd = 0;       // 迫击炮冷却
-  p.mortarShot = null;  // 迫击炮落点 {x,y,t,id}
+  p.mortarCd = 0;       // 迫击炮冷却（30s 一发）
+  p.mortarShot = null;  // 迫击炮弹丸（已改为直射弹丸，此字段保留占位）
   p.jammed = false;     // 被窗帘干扰（锁定被打断）
   p.jamOn = false;      // T90A 干扰激活（扇形内有目标）
   p.atgm = 0;           // 反坦克导弹弹药（拾取 1 发）
@@ -1004,41 +1003,15 @@ function sim(room, dt, now) {
       if ((dx * jca + dy * jsa) / d > Math.cos(Math.PI * 0.28)) { // 夹角 < 50°
         p.jamOn = true;
         q.jammed = true;
-        if (TANK_TYPES[q.type] && TANK_TYPES[q.type].mortar) q.mortarT = 0; // 打断梅卡瓦锁定
       }
     }
   }
 
-  // ---- 梅卡瓦迫击炮锁定：静止 3s + 周围有敌人（900px）+ 未被干扰 ----
+  // ---- 梅卡瓦迫击炮：冷却递减（发射由 mfire 消息触发：穿墙直射弹丸，30s 冷却）----
   for (const p of alive) {
     const mt = TANK_TYPES[p.type];
     if (!mt || !mt.mortar) continue;
     if (p.mortarCd > 0) p.mortarCd -= dt;
-    if (p.input.thr === 0 && p.input.steer === 0 && !p.jammed) {
-      let near = false;
-      for (const q of alive) {
-        if (q.id !== p.id && Math.hypot(q.tank.x - p.tank.x, q.tank.y - p.tank.y) < 1500) { near = true; break; }
-      }
-      if (near) p.mortarT = (p.mortarT || 0) + dt;
-      else p.mortarT = 0;
-    } else {
-      p.mortarT = 0;
-    }
-    if (p.mortarT > 3) p.mortarT = 3;
-    // 迫击炮落点爆炸（延迟 1.2s，无视地形）
-    if (p.mortarShot && now >= p.mortarShot.t) {
-      const q = room.players.get(p.mortarShot.id);
-      if (q && q.alive && q.tank) {
-        const dd = Math.hypot(q.tank.x - p.mortarShot.x, q.tank.y - p.mortarShot.y);
-        if (dd < 90) {
-          const lost = Math.ceil(q.era * 0.3); // 扣 30% 爆反血条
-          q.era = Math.max(0, q.era - lost);
-          room.pendingEvents.push({ k: 'mhit', id: q.id, x: Math.round(p.mortarShot.x), y: Math.round(p.mortarShot.y), era: q.era });
-        }
-      }
-      room.pendingEvents.push({ k: 'mboom', x: Math.round(p.mortarShot.x), y: Math.round(p.mortarShot.y) });
-      p.mortarShot = null;
-    }
   }
 
   // ---- 坦克移动 / 开火 ----
@@ -1219,11 +1192,13 @@ function sim(room, dt, now) {
           b.y < WALL_T + BULLET.r || b.y > WORLD.h - WALL_T - BULLET.r) { dead = true; }
     }
 
-    // 边界反弹
-    if (!dead && !b.isAtgm && b.x < WALL_T + BULLET.r) { b.x = WALL_T + BULLET.r; b.vx = -b.vx; if (bDead()) dead = true; }
-    if (!dead && !b.isAtgm && b.x > WORLD.w - WALL_T - BULLET.r) { b.x = WORLD.w - WALL_T - BULLET.r; b.vx = -b.vx; if (bDead()) dead = true; }
-    if (!dead && !b.isAtgm && b.y < WALL_T + BULLET.r) { b.y = WALL_T + BULLET.r; b.vy = -b.vy; if (bDead()) dead = true; }
-    if (!dead && !b.isAtgm && b.y > WORLD.h - WALL_T - BULLET.r) { b.y = WORLD.h - WALL_T - BULLET.r; b.vy = -b.vy; if (bDead()) dead = true; }
+    // 边界反弹（迫击炮穿墙：越界即消失，不反弹）
+    if (!dead && !b.isAtgm && !b.isMortar && b.x < WALL_T + BULLET.r) { b.x = WALL_T + BULLET.r; b.vx = -b.vx; if (bDead()) dead = true; }
+    if (!dead && !b.isAtgm && !b.isMortar && b.x > WORLD.w - WALL_T - BULLET.r) { b.x = WORLD.w - WALL_T - BULLET.r; b.vx = -b.vx; if (bDead()) dead = true; }
+    if (!dead && !b.isAtgm && !b.isMortar && b.y < WALL_T + BULLET.r) { b.y = WALL_T + BULLET.r; b.vy = -b.vy; if (bDead()) dead = true; }
+    if (!dead && !b.isAtgm && !b.isMortar && b.y > WORLD.h - WALL_T - BULLET.r) { b.y = WORLD.h - WALL_T - BULLET.r; b.vy = -b.vy; if (bDead()) dead = true; }
+    // 迫击炮越界消失
+    if (!dead && b.isMortar && (b.x < WALL_T || b.x > WORLD.w - WALL_T || b.y < WALL_T || b.y > WORLD.h - WALL_T)) dead = true;
 
     // 障碍碰撞：线段检测（防高速隧穿穿墙），仅在真正撞击表面时反弹并消耗穿深（ATGM 撞障碍消失）
     if (!dead) {
@@ -1231,6 +1206,7 @@ function sim(room, dt, now) {
         const hit = segRectHit(px, py, b.x, b.y, o);
         if (hit) {
           if (b.isAtgm) { dead = true; break; } // ATGM 撞障碍即消失（不反弹不穿墙）
+          if (b.isMortar) break; // 迫击炮弹穿墙（高抛弧线，无视障碍）
           b.x = hit.x; b.y = hit.y;
           const vn = b.vx * hit.nx + b.vy * hit.ny;
           if (vn < 0) {
@@ -1242,8 +1218,8 @@ function sim(room, dt, now) {
         }
       }
     }
-    // 兜底：子弹中心进入障碍内部（擦角/极端情况）→ 强制按最近表面推出并反弹，杜绝穿墙
-    if (!dead) {
+    // 兜底：子弹中心进入障碍内部（擦角/极端情况）→ 强制按最近表面推出并反弹，杜绝穿墙（迫击炮跳过）
+    if (!dead && !b.isMortar) {
       for (const o of room.obstacles) {
         if (b.x > o.x && b.x < o.x + o.w && b.y > o.y && b.y < o.y + o.h) {
           const dl = b.x - o.x, dr = o.x + o.w - b.x;
@@ -1278,6 +1254,13 @@ function sim(room, dt, now) {
         const ry = -dx * fwdY + dy * fwdX;
         if (Math.abs(rx) < TANK.l / 2 + BULLET.r && Math.abs(ry) < TANK.w / 2 + BULLET.r) {
           dead = true;
+          if (b.isMortar) {
+            // 迫击炮命中：扣 30% 爆反（相对当前值），其余伤害走常规 100 穿深判定
+            const mlost = Math.ceil(q.era * 0.3);
+            q.era = Math.max(0, q.era - mlost);
+            q.eraHit = true; // 视为已受击，后续命中按常规扣减
+            room.pendingEvents.push({ k: 'mhit', id: q.id, x: Math.round(t2.x), y: Math.round(t2.y), era: q.era });
+          }
           if (q.shield) {
             q.shield = false;
             room.pendingEvents.push({ k: 'shield', id: q.id, x: Math.round(t2.x), y: Math.round(t2.y) });
@@ -1318,11 +1301,13 @@ function sim(room, dt, now) {
                 room.pendingEvents.push({ k: 'boom', x: Math.round(t2.x), y: Math.round(t2.y) });
               }
             } else {
-              // 爆反血条：本回合首次被命中扣 40-70 随机，之后每次扣 20-40 随机
-              const eraFirstHit = !q.eraHit; // 本回合是否首次被命中
-              q.eraHit = true;
-              const eraCost = eraFirstHit ? (40 + Math.floor(Math.random() * 31)) : (20 + Math.floor(Math.random() * 21));
-              if (q.era > 0) q.era = Math.max(0, q.era - eraCost);
+              // 爆反血条：本回合首次被命中扣 40-70 随机，之后每次扣 20-40 随机（迫击炮已扣 30%，跳过常规扣减）
+              if (!b.isMortar) {
+                const eraFirstHit = !q.eraHit; // 本回合是否首次被命中
+                q.eraHit = true;
+                const eraCost = eraFirstHit ? (40 + Math.floor(Math.random() * 31)) : (20 + Math.floor(Math.random() * 21));
+                if (q.era > 0) q.era = Math.max(0, q.era - eraCost);
+              }
               // 装甲厚度判定：爆反生效时正面/侧面增强（背面不变）；梅卡瓦发动机前置：没坏时全部位 +200
               let armor = (q.era > 0 ? tt.armorEra : tt.armor)[zone];
               if (tt.engineFront && q.parts.engine) armor += 200;
@@ -1688,7 +1673,7 @@ function broadcast(room) {
       rp: Math.round(p.repairT * 10) / 10,
       fr: p.fireT > 0 ? Math.ceil(p.fireT) : 0,
       am: p.ammoFire ? 1 : 0, // 弹药架起火标记（客户端剧烈火焰特效）
-      mt: TANK_TYPES[p.type] && TANK_TYPES[p.type].mortar ? Math.round(p.mortarT * 10) / 10 : 0, // 迫击炮锁定进度 0-3
+      mc: TANK_TYPES[p.type] && TANK_TYPES[p.type].mortar ? Math.max(0, Math.round(p.mortarCd * 10) / 10) : 0, // 迫击炮冷却剩余秒（满 30 就绪）
       ag: p.atgm || 0,      // 反坦克导弹持有数
       jm: p.jamOn ? 1 : 0,  // T90A 窗帘干扰激活（红眼发光）
       ap: TANK_TYPES[p.type] && TANK_TYPES[p.type].aps ? p.apsN : 0, // 99B 主动防御充能
@@ -1799,25 +1784,23 @@ function onMessage(conn, buf) {
       break;
     }
     case 'mfire': {
-      // 梅卡瓦专属迫击炮：锁定完成（静止 3s + 周围有敌人 + 未被干扰）才可发射
+      // 梅卡瓦专属迫击炮：穿墙直射弹丸（无需静止/锁定），30s 冷却，命中扣 30% 爆反 + 100 穿深判定
       if (!p || !p.room || p.room.phase !== 'play' || !p.alive) break;
       const room = p.room;
       const mt = TANK_TYPES[p.type];
       if (!mt || !mt.mortar) break;
-      if (p.mortarT < 3 || p.mortarCd > 0 || p.jammed) break;
-      p.mortarCd = 8; // 冷却 8s
-      p.mortarT = 0;
-      // 锁定最近的敌人（当前位置为落点，无视地形，1.2s 后爆炸）
-      let target = null, best = 1e9;
-      for (const q of p.room.players.values()) {
-        if (q.id !== p.id && q.alive && q.tank) {
-          const d = Math.hypot(q.tank.x - p.tank.x, q.tank.y - p.tank.y);
-          if (d < best) { best = d; target = q; }
-        }
-      }
-      if (!target) break;
-      p.mortarShot = { x: target.tank.x, y: target.tank.y, t: Date.now() + 1200, id: target.id };
-      room.pendingEvents.push({ k: 'mshot', id: p.id, x: Math.round(p.tank.x), y: Math.round(p.tank.y), tx: Math.round(target.tank.x), ty: Math.round(target.tank.y) });
+      if (p.mortarCd > 0 || p.jammed || !p.tank) break;
+      p.mortarCd = 30; // 冷却 30s
+      const tk = p.tank;
+      const mx = tk.x + Math.cos(tk.ta) * 34, my = tk.y + Math.sin(tk.ta) * 34;
+      room.bullets.push({
+        x: mx, y: my,
+        vx: Math.cos(tk.ta) * 340, vy: Math.sin(tk.ta) * 340, // 迫击炮弹速
+        ownerId: p.id, ownerType: p.type, pen: 100, life: 6,
+        spawnT: Date.now(), penBounces: 0,
+        isMortar: true, // 迫击炮弹：穿墙（高抛弧线）、命中扣 30% 爆反 + 100 穿深判定
+      });
+      room.pendingEvents.push({ k: 'mshot', id: p.id, x: Math.round(mx), y: Math.round(my) });
       break;
     }
     case 'atgm': {
