@@ -1,27 +1,27 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>鍧﹀厠鍔ㄨ崱 路 澶氫汉鑱旀満</title>
+<title>坦克动荡 · 多人联机</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%9B%A1%EF%B8%8F%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css?v=137">
 </head>
 <body>
 <canvas id="game"></canvas>
 
-<!-- 椤堕儴淇℃伅 -->
+<!-- 顶部信息 -->
 <div id="topbar" class="hidden">
-  <div id="roomInfo">鎴块棿 <b id="codeText"></b> <button id="btnCopy" class="mini" title="澶嶅埗鎴块棿閾炬帴">澶嶅埗閾炬帴</button></div>
-  <div id="pingBox">寤惰繜 <span id="pingText">-</span>ms</div>
+  <div id="roomInfo">房间 <b id="codeText"></b> <button id="btnCopy" class="mini" title="复制房间链接">复制链接</button></div>
+  <div id="pingBox">延迟 <span id="pingText">-</span>ms</div>
   <div class="topright">
-    <button id="btnPub" class="mini hidden" title="澶嶅埗鍏綉閾炬帴">馃寪 鍏綉</button>
-    <button id="btnMute" class="mini">馃攰</button>
-    <button id="btnLeave" class="mini">閫€鍑烘埧闂?/button>
+    <button id="btnPub" class="mini hidden" title="复制公网链接">🌐 公网</button>
+    <button id="btnMute" class="mini">🔊</button>
+    <button id="btnLeave" class="mini">退出房间</button>
   </div>
 </div>
 
-<!-- 鍊掕鏃?/ 妯箙 / 鍑绘潃鎾姤 -->
+<!-- 倒计时 / 横幅 / 击杀播报 -->
 <div id="countdown" class="hidden"></div>
 <div id="banner" class="hidden"></div>
 <div id="killfeed"></div>
@@ -29,14 +29,14 @@
 <!-- HUD -->
 <div id="hud" class="hidden">
   <div id="hpWrap"><div id="hpBar"></div><span id="hpText"></span></div>
-  <div id="ammoBox">馃敨 宸茶濉?/div>
-  <div id="eraBox">馃洝锔?/div>
+  <div id="ammoBox">🔫 已装填</div>
+  <div id="eraBox">🛡️</div>
   <div id="partsBox">
-    <span class="part" id="part-track" title="灞ュ甫">馃洖</span>
-    <span class="part" id="part-turret" title="鐐">馃幆</span>
-    <span class="part" id="part-engine" title="鍙戝姩鏈?>鈿欙笍</span>
-    <span class="part" id="part-ammo" title="寮硅嵂鏋?>馃Ж</span>
-    <span class="part" id="part-optics" title="瑙傜瀯">馃敪</span>
+    <span class="part" id="part-track" title="履带">🛞</span>
+    <span class="part" id="part-turret" title="炮塔">🎯</span>
+    <span class="part" id="part-engine" title="发动机">⚙️</span>
+    <span class="part" id="part-ammo" title="弹药架">🧨</span>
+    <span class="part" id="part-optics" title="观瞄">🔭</span>
   </div>
   <div id="repairBar" class="hidden"><i></i></div>
   <div id="buffs"></div>
@@ -44,119 +44,119 @@
 <div id="damageNote" class="hidden"></div>
 <div id="deathOverlay" class="hidden"><div id="deathText"></div></div>
 
-<!-- 璁板垎鏉?-->
-<div id="scoreboard" class="hidden"><div class="sbTitle">璁板垎鏉?/div><div id="sbRows"></div></div>
+<!-- 记分板 -->
+<div id="scoreboard" class="hidden"><div class="sbTitle">记分板</div><div id="sbRows"></div></div>
 
-<!-- 灏忓湴鍥?-->
+<!-- 小地图 -->
 <canvas id="minimap" width="148" height="111"></canvas>
 
-<!-- 涓昏彍鍗曪紙JS 灏辩华鍚庢樉绀猴紝閬垮厤鍔犺浇鏈熼棿璇偣锛?-->
+<!-- 主菜单（JS 就绪后显示，避免加载期间误点） -->
 <div id="menu" class="panel hidden">
-  <h1>馃洝锔?鍧﹀厠鍔ㄨ崱</h1>
-  <p class="sub">澶氫汉鑱旀満 路 鏈€鍚庝竴杈嗗潶鍏嬭幏鑳?/p>
-  <input id="nameInput" maxlength="12" placeholder="杈撳叆鏄电О">
-  <div class="row"><button id="btnSolo" class="primary">馃 鍗曚汉妯″紡锛堜汉鏈哄鎴橈級</button></div>
-  <div class="row"><button id="btnCreate">鍒涘缓鎴块棿锛堣仈鏈猴級</button></div>
+  <h1>🛡️ 坦克动荡</h1>
+  <p class="sub">多人联机 · 最后一辆坦克获胜</p>
+  <input id="nameInput" maxlength="12" placeholder="输入昵称">
+  <div class="row"><button id="btnSolo" class="primary">🤖 单人模式（人机对战）</button></div>
+  <div class="row"><button id="btnCreate">创建房间（联机）</button></div>
   <div class="row">
-    <input id="joinInput" maxlength="4" placeholder="鎴块棿鍙?4浣?" class="join">
-    <button id="btnJoin">鍔犲叆鎴块棿</button>
+    <input id="joinInput" maxlength="4" placeholder="房间号(4位)" class="join">
+    <button id="btnJoin">加入房间</button>
   </div>
   <div id="errMsg"></div>
   <div id="lanRooms">
-    <div class="lrTitle"><span>馃摗 灞€鍩熺綉鎴块棿</span><button id="btnRefresh" class="mini">鍒锋柊</button></div>
-    <div id="roomList"><p class="empty">姝ｅ湪鎵弿鈥?/p></div>
+    <div class="lrTitle"><span>📡 局域网房间</span><button id="btnRefresh" class="mini">刷新</button></div>
+    <div id="roomList"><p class="empty">正在扫描…</p></div>
   </div>
   <div class="tips">
-    <p><b>鎿嶄綔锛?/b>WASD / 鏂瑰悜閿?绉诲姩 路 榧犳爣 鐬勫噯 路 宸﹂敭 / 绌烘牸 寮€鐏?路 Shift 鍔犻€?路 M 闈欓煶</p>
-    <p><b>鐜╂硶锛?/b>鐐脊鍙弽寮?3 娆★紝鎹￠亾鍏峰己鍖栬嚜宸憋紝鍧氭寔鍒版渶鍚庤幏鑳滐紒</p>
+    <p><b>操作：</b>WASD / 方向键 移动 · 鼠标 瞄准 · 左键 / 空格 开火 · Shift 加速 · M 静音</p>
+    <p><b>玩法：</b>炮弹可反弹 3 次，捡道具强化自己，坚持到最后获胜！</p>
   </div>
-  <div class="row"><button id="btnLayout" class="mini">鈿欙笍 甯冨眬璁剧疆锛堟寜閿?灏忓湴鍥撅級</button></div>
-  <div class="ver">v0.02.137 娴嬭瘯鐗?/div>
+  <div class="row"><button id="btnLayout" class="mini">⚙️ 布局设置（按键/小地图）</button></div>
+  <div class="ver">v0.02.137 测试版</div>
 </div>
 
-<!-- 甯冨眬璁剧疆闈㈡澘锛堟嫋鍔ㄦ寜閿?灏忓湴鍥捐皟鏁翠綅缃紝婊戝潡璋冨ぇ灏忥級 -->
+<!-- 布局设置面板（拖动按键/小地图调整位置，滑块调大小） -->
 <div id="layoutPanel" class="hidden">
-  <div class="lpTitle">馃帥锔?甯冨眬璁剧疆 <span class="lpSub">鎷栧姩鎺т欢璋冩暣浣嶇疆 路 鐐归€夊悗婊戝潡璋冨ぇ灏?/span></div>
+  <div class="lpTitle">🎛️ 布局设置 <span class="lpSub">拖动控件调整位置 · 点选后滑块调大小</span></div>
   <div class="lpRow">
-    <button class="mini lpSel" data-lp="dpad">鍗佸瓧閿?/button>
-    <button class="mini lpSel" data-lp="fire">寮€鐏敭</button>
-    <button class="mini lpSel" data-lp="boost">鍔犻€熼敭</button>
-    <button class="mini lpSel" data-lp="map">灏忓湴鍥?/button>
+    <button class="mini lpSel" data-lp="dpad">十字键</button>
+    <button class="mini lpSel" data-lp="fire">开火键</button>
+    <button class="mini lpSel" data-lp="boost">加速键</button>
+    <button class="mini lpSel" data-lp="map">小地图</button>
   </div>
   <div class="lpRow lpSizeRow">
-    <span>澶у皬</span>
+    <span>大小</span>
     <input type="range" id="lpSize" min="40" max="150" value="54">
     <span id="lpSizeVal">54</span>
   </div>
   <div class="lpRow">
-    <button class="mini" id="lpSave">馃捑 淇濆瓨</button>
-    <button class="mini" id="lpReset">鈫?鎭㈠榛樿</button>
-    <button class="mini" id="lpClose">鍏抽棴</button>
+    <button class="mini" id="lpSave">💾 保存</button>
+    <button class="mini" id="lpReset">↺ 恢复默认</button>
+    <button class="mini" id="lpClose">关闭</button>
   </div>
 </div>
 
-<!-- 澶у巺 -->
+<!-- 大厅 -->
 <div id="lobby" class="panel hidden">
-  <h2>鎴块棿 <span id="lobbyCode"></span></h2>
+  <h2>房间 <span id="lobbyCode"></span></h2>
   <div id="lobbyLink"></div>
   <div id="tankPick">
-    <div class="tpTitle">閫夋嫨浣犵殑鍧﹀厠</div>
+    <div class="tpTitle">选择你的坦克</div>
     <div class="tpCards">
       <button class="tpCard" id="tp-us" data-type="us">
-        <span class="tpName">馃嚭馃嚫 M1A1</span>
+        <span class="tpName">🇺🇸 M1A1</span>
       </button>
       <button class="tpCard" id="tp-ru" data-type="ru">
-        <span class="tpName">馃嚪馃嚭 T90A</span>
+        <span class="tpName">🇷🇺 T90A</span>
       </button>
       <button class="tpCard" id="tp-jp" data-type="jp">
-        <span class="tpName">馃嚡馃嚨 90寮?/span>
+        <span class="tpName">🇯🇵 90式</span>
       </button>
       <button class="tpCard" id="tp-il" data-type="il">
-        <span class="tpName">馃嚠馃嚤 姊呭崱鐡?/span>
+        <span class="tpName">🇮🇱 梅卡瓦</span>
       </button>
       <button class="tpCard" id="tp-cn" data-type="cn">
-        <span class="tpName">馃嚚馃嚦 99B</span>
+        <span class="tpName">🇨🇳 99B</span>
       </button>
       <button class="tpCard" id="tp-de" data-type="de">
-        <span class="tpName">馃嚜馃嚭 璞逛簩A6</span>
+        <span class="tpName">🇪🇺 豹二A6</span>
       </button>
     </div>
     <div id="tankInfo"></div>
   </div>
   <div id="tunnelBox">
-    <button id="btnTunnel">馃寪 寮€鍚叕缃戣仈鏈?/button>
+    <button id="btnTunnel">🌐 开启公网联机</button>
     <div id="tunnelStatus"></div>
   </div>
   <div id="playerList"></div>
   <div class="row">
-    <button id="btnStart" class="primary">寮€濮嬫父鎴?/button>
-    <button id="btnBack">杩斿洖</button>
+    <button id="btnStart" class="primary">开始游戏</button>
+    <button id="btnBack">返回</button>
   </div>
   <p id="lobbyHint"></p>
 </div>
 
-<!-- 瑙﹀睆鎺у埗锛氬崄瀛楁柟鍚戦敭 + 寮€鐏敭 + 鍔犻€熼敭 -->
+<!-- 触屏控制：十字方向键 + 开火键 + 加速键 -->
 <div id="dpad">
-  <button class="dpad-btn" id="dpad-up">鈻?/button>
-  <button class="dpad-btn" id="dpad-left">鈼€</button>
-  <button class="dpad-btn" id="dpad-right">鈻?/button>
-  <button class="dpad-btn" id="dpad-down">鈻?/button>
+  <button class="dpad-btn" id="dpad-up">▲</button>
+  <button class="dpad-btn" id="dpad-left">◀</button>
+  <button class="dpad-btn" id="dpad-right">▶</button>
+  <button class="dpad-btn" id="dpad-down">▼</button>
 </div>
-<button id="btnFire" title="寮€鐏?>馃敟</button>
-<div id="boostBtn">鍔犻€?/div>
-<button id="btnMortarMode" title="鍒囨崲涓荤偖/杩嚮鐐?>馃挘</button>
-<button id="btnAtgm" title="鍙戝皠鍙嶅潶鍏嬪寮?>馃殌</button>
-<button id="btnAps" title="寮€鍚富鍔ㄩ槻寰?>馃洝锔?/button>
-<button id="btnLayoutGame" title="甯冨眬璁剧疆">鈿欙笍</button>
+<button id="btnFire" title="开火">🔥</button>
+<div id="boostBtn">加速</div>
+<button id="btnMortarMode" title="切换主炮/迫击炮">💣</button>
+<button id="btnAtgm" title="发射反坦克导弹">🚀</button>
+<button id="btnAps" title="开启主动防御">🛡️</button>
+<button id="btnLayoutGame" title="布局设置">⚙️</button>
 
-<!-- 绔栧睆鎻愮ず -->
-<div id="rotHint">馃摫 璇锋í灞忔父鐜?br><small>鏃嬭浆鎵嬫満浠ヨ幏寰楁渶浣充綋楠?/small></div>
+<!-- 竖屏提示 -->
+<div id="rotHint">📱 请横屏游玩<br><small>旋转手机以获得最佳体验</small></div>
 
-<!-- 杩炴帴閬僵 -->
+<!-- 连接遮罩 -->
 <div id="connOverlay" class="hidden">
   <div class="spin"></div>
-  <div id="connText">杩炴帴涓€?/div>
-  <button id="btnConnCancel" class="hidden">杩斿洖</button>
+  <div id="connText">连接中…</div>
+  <button id="btnConnCancel" class="hidden">返回</button>
 </div>
 
 <script src="game.js?v=137"></script>
