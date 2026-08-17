@@ -841,6 +841,9 @@
       [tk.x - ca * TANK.rx - sa * TANK.ry, tk.y - sa * TANK.rx + ca * TANK.ry],
     ];
     for (const o of mapObstacles) {
+      // 性能粗筛：AABB 距离预判——障碍不在坦克附近直接跳过 SAT（每帧省 90%+ 计算）
+      const ocx = o.x + o.w / 2, ocy = o.y + o.h / 2;
+      if (Math.abs(tk.x - ocx) > o.w / 2 + 38 || Math.abs(tk.y - ocy) > o.h / 2 + 38) continue;
       const corners = [[o.x, o.y], [o.x + o.w, o.y], [o.x + o.w, o.y + o.h], [o.x, o.y + o.h]];
       const axes = [[ca, sa], [-sa, ca], [1, 0], [0, 1]];
       let minOverlap = Infinity, ax = 0, ay = 0;
@@ -934,8 +937,13 @@
     ctx.strokeStyle = '#4fc3f7';
     ctx.lineWidth = 2;
     ctx.strokeRect(WALL_T, WALL_T, WORLD.w - WALL_T * 2, WORLD.h - WALL_T * 2);
-    // 障碍
+    // 障碍（视口裁剪：只画屏幕内障碍，每帧省大量 fillRect）
+    const vpx0 = cam.x - canvas.clientWidth / 2 / cam.s - 60;
+    const vpx1 = cam.x + canvas.clientWidth / 2 / cam.s + 60;
+    const vpy0 = cam.y - canvas.clientHeight / 2 / cam.s - 60;
+    const vpy1 = cam.y + canvas.clientHeight / 2 / cam.s + 60;
     for (const o of mapObstacles) {
+      if (o.x > vpx1 || o.x + o.w < vpx0 || o.y > vpy1 || o.y + o.h < vpy0) continue;
       ctx.fillStyle = '#1c2740';
       rr(o.x, o.y, o.w, o.h, 8); ctx.fill();
       ctx.strokeStyle = '#33456b';
@@ -1759,23 +1767,6 @@
       ctx.fillStyle = t.ty === 'ru' ? '#4a5a48' : '#46524a';
       ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.fill();
     }
-    // T90A 红点眼睛发光：炮塔炮管两侧，附近有敌人（500px）时亮起
-    if (t.ty === 'ru') {
-      let nearEnemy = false;
-      for (const p2 of players.values()) {
-        if (!p2.render || p2.id === myId || p2.id === p.id) continue;
-        if (Math.hypot(p2.render.x - t.x, p2.render.y - t.y) < 500) { nearEnemy = true; break; }
-      }
-      if (nearEnemy) {
-        const pulse = 0.6 + Math.sin(now / 90) * 0.3;
-        ctx.fillStyle = 'rgba(255, 60, 40, ' + pulse * 0.4 + ')';
-        ctx.beginPath(); ctx.arc(10.7, -6.8, 6.5, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(10.7, 6.8, 6.5, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = 'rgba(255, 130, 90, 0.95)';
-        ctx.beginPath(); ctx.arc(10.7, -6.8, 2.2, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(10.7, 6.8, 2.2, 0, Math.PI * 2); ctx.fill();
-      }
-    }
     // 炮管（与服务器子弹出生点 34 一致；红箭10 无炮管——发射箱贴图自带发射装置）
     if (t.ty !== 'hj10') {
       // 防盾根座（连接炮塔，暗色基座）
@@ -2012,7 +2003,7 @@
         els.wepBar.firstChild.style.background = '#ff5252';
         els.wepBox.style.borderColor = '#ff5252';
       } else {
-        els.wepText.textContent = '📡 干扰就绪（前方扇形自动触发）';
+        els.wepText.textContent = '📡 反导干扰就绪（导弹进入前方扇形自动返回）';
         els.wepBar.firstChild.style.width = '100%';
         els.wepBar.firstChild.style.background = '#66bb6a';
         els.wepBox.style.borderColor = '#66bb6a';
