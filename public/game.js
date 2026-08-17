@@ -945,9 +945,10 @@
     for (const pu of pups) {
       drawPup(pu, now);
     }
-    // 子弹：远程用插值快照，自己的用本地预测（即时反馈，避免等服务器往返）
+    // 子弹：服务器快照权威渲染（含自机炮弹，解决"发射不显示/消失"）；本地预测弹仅作快照到达前的即时反馈
+    let hasOwnServerBullet = false;
     for (const b of bullets) {
-      if (b.o === myId) continue; // 自己的子弹由本地预测渲染
+      if (b.o === myId) hasOwnServerBullet = true;
       if (b.ag) {
         // 反坦克导弹：慢速长条 + 尾焰
         const tx = b.x - b.vx * 0.12, ty = b.y - b.vy * 0.12;
@@ -970,6 +971,7 @@
       ctx.beginPath(); ctx.arc(b.x, b.y, 7.5, 0, Math.PI * 2); ctx.fill();
     }
     for (const pb of predBullets) {
+      if (hasOwnServerBullet) break; // 服务器快照已接管自机炮弹，预测弹不再画（避免双弹）
       const tx = pb.x - pb.vx * 0.045, ty = pb.y - pb.vy * 0.045;
       ctx.strokeStyle = 'rgba(255, 235, 170, 0.7)';
       ctx.lineWidth = 2.5;
@@ -2279,7 +2281,17 @@
       if (localReload <= 0) localMag = MAG_SIZE;
     }
     const inpNow = currentInput();
-    if (phase === 'play' && selfAlive && selfParts.turret && inpNow.shoot && localFireCd <= 0 && localMag > 0) {
+    // 迫击炮模式：本地预测弹（穿墙、慢速），30s 冷却由服务器控制（mc），此处只做即时视觉反馈
+    if (phase === 'play' && selfAlive && selfParts.turret && mortarMode && inpNow.shoot && pred && localFireCd <= 0) {
+      localFireCd = 0.35; // 预测弹限频（服务器 30s 冷却为准）
+      const ta = autoTurret ? pred.a : mouseAngle;
+      predBullets.push({
+        x: pred.x + Math.cos(ta) * 34, y: pred.y + Math.sin(ta) * 34,
+        vx: Math.cos(ta) * 340, vy: Math.sin(ta) * 340,
+        pen: 100, t: performance.now(), isMortar: true,
+      });
+    }
+    if (phase === 'play' && selfAlive && selfParts.turret && !mortarMode && inpNow.shoot && localFireCd <= 0 && localMag > 0) {
       localFireCd = 0.25;
       localMag = 0;
       let reload = TANK_TYPES[selfType].reload;
@@ -2345,14 +2357,14 @@
         }
       }
       if (hitTank) { predBullets.splice(i, 1); continue; }
-      // 世界墙反弹（与服务器同：反弹扣穿深，扣完消失）
+      // 世界墙反弹（与服务器同：反弹扣穿深，扣完消失；迫击炮弹穿墙）
       let bounced = false;
-      if (pb.x < WALL_T + 5) { pb.x = WALL_T + 5; pb.vx = -pb.vx; bounced = true; }
-      else if (pb.x > WORLD.w - WALL_T - 5) { pb.x = WORLD.w - WALL_T - 5; pb.vx = -pb.vx; bounced = true; }
-      if (!bounced && pb.y < WALL_T + 5) { pb.y = WALL_T + 5; pb.vy = -pb.vy; bounced = true; }
-      else if (!bounced && pb.y > WORLD.h - WALL_T - 5) { pb.y = WORLD.h - WALL_T - 5; pb.vy = -pb.vy; bounced = true; }
-      // 障碍反弹：线段检测（与服务器 segRectHit 一致，反弹轨迹完整）
-      if (!bounced) {
+      if (!pb.isMortar && pb.x < WALL_T + 5) { pb.x = WALL_T + 5; pb.vx = -pb.vx; bounced = true; }
+      else if (!pb.isMortar && pb.x > WORLD.w - WALL_T - 5) { pb.x = WORLD.w - WALL_T - 5; pb.vx = -pb.vx; bounced = true; }
+      if (!bounced && !pb.isMortar && pb.y < WALL_T + 5) { pb.y = WALL_T + 5; pb.vy = -pb.vy; bounced = true; }
+      else if (!bounced && !pb.isMortar && pb.y > WORLD.h - WALL_T - 5) { pb.y = WORLD.h - WALL_T - 5; pb.vy = -pb.vy; bounced = true; }
+      // 障碍反弹：线段检测（与服务器 segRectHit 一致，反弹轨迹完整；迫击炮弹穿墙）
+      if (!bounced && !pb.isMortar) {
         for (const o of mapObstacles) {
           const hit = segRectHit(px0, py0, pb.x, pb.y, o);
           if (hit) {
@@ -2370,8 +2382,8 @@
       if (bounced) {
         if (bouncePen(pb)) { predBullets.splice(i, 1); continue; }
       }
-      // 兜底：子弹中心进入障碍内部（反弹后贴墙/擦角）→ 按最近表面推出（与服务器一致，杜绝穿墙）
-      if (!bounced) {
+      // 兜底：子弹中心进入障碍内部（反弹后贴墙/擦角）→ 按最近表面推出（与服务器一致，杜绝穿墙；迫击炮跳过）
+      if (!bounced && !pb.isMortar) {
         for (const o of mapObstacles) {
           if (pb.x > o.x && pb.x < o.x + o.w && pb.y > o.y && pb.y < o.y + o.h) {
             const dl = pb.x - o.x, dr = o.x + o.w - pb.x;
