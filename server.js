@@ -898,10 +898,7 @@ function spawnPlayer(room, p, seat) {
   // 梅卡瓦迫击炮 / T90A 干扰 / 反坦克导弹
   p.mortarCd = 0;       // 迫击炮冷却（30s 一发）
   p.mortarShot = null;  // 迫击炮弹丸（已改为直射弹丸，此字段保留占位）
-  p.jammed = false;     // 被窗帘干扰（锁定被打断）
-  p.jamOn = false;      // T90A 干扰激活（扇形内有目标）
-  p.jamUntil = 0;       // 干扰持续截止时间（1.5s）
-  p.shtoraCd = 0;       // T90A 干扰冷却（干扰一次后 20s）
+  p.shtoraCd = 0;       // T90A 干扰冷却（干扰导弹一次后 20s）
   p.atgm = 0;           // 反坦克导弹弹药（拾取 1 发）
   // 99B 主动防御系统（APS）：2 次充能、开启抵挡一次攻击、10s 后消失、用完冷却 60s 恢复
   p.apsN = 2;           // 剩余充能
@@ -956,6 +953,9 @@ function collideTankWorld(tk, obstacles) {
     [tk.x - ca * TANK.rx - sa * TANK.ry, tk.y - sa * TANK.rx + ca * TANK.ry],
   ];
   for (const o of obstacles) {
+    // 性能粗筛：AABB 距离预判——障碍不在坦克附近直接跳过 SAT（每 tick 省 90%+ 计算，降低延迟）
+    const ocx = o.x + o.w / 2, ocy = o.y + o.h / 2;
+    if (Math.abs(tk.x - ocx) > o.w / 2 + 38 || Math.abs(tk.y - ocy) > o.h / 2 + 38) continue;
     const corners = [[o.x, o.y], [o.x + o.w, o.y], [o.x + o.w, o.y + o.h], [o.x, o.y + o.h]];
     const axes = [[ca, sa], [-sa, ca], [1, 0], [0, 1]];
     let minOverlap = Infinity, ax = 0, ay = 0;
@@ -1003,32 +1003,9 @@ function sim(room, dt, now) {
     }
   }
 
-  // ---- T90A 窗帘干扰（重做：干扰一次后冷却 20s；扇形 ±50°/700px 检测）----
-  // 效果：范围内敌人被干扰（jammed，持续 1.5s：梅卡瓦迫击炮被拒 / ATGM 原路返回）；jamOn 红眼发光
+  // ---- T90A 窗帘干扰（只反导，不干扰坦克本体）：导弹进入前方扇形被原路返回，每次干扰后冷却 20s ----
   for (const p of alive) {
-    // jammed/jamOn 计时清除（1.5s 持续；now 为毫秒）
-    if (p.jamUntil && now / 1000 > p.jamUntil) { p.jamOn = false; p.jammed = false; p.jamUntil = 0; }
     if (p.shtoraCd > 0) p.shtoraCd -= dt;
-    const jt = TANK_TYPES[p.type];
-    if (!jt || !jt.shtora) continue;
-    if (p.shtoraCd > 0) continue; // 冷却中不干扰
-    const jk = p.tank;
-    const jca = Math.cos(jk.ta), jsa = Math.sin(jk.ta);
-    for (const q of alive) {
-      if (q.id === p.id) continue;
-      const dx = q.tank.x - jk.x, dy = q.tank.y - jk.y;
-      const d = Math.hypot(dx, dy);
-      if (d > 700 || d < 1) continue;
-      if ((dx * jca + dy * jsa) / d > Math.cos(Math.PI * 0.28)) { // 夹角 < 50°
-        p.jamOn = true;           // 红眼发光（快照 jm，持续 1.5s）
-        q.jammed = true;          // 目标被干扰（mfire 拒绝 / ATGM 返回判定）
-        q.jamUntil = now / 1000 + 1.5;   // 干扰持续 1.5s（秒）
-        p.jamUntil = now / 1000 + 1.5;
-        p.shtoraCd = 20;          // 干扰一次后冷却 20s（快照 sj）
-        room.pendingEvents.push({ k: 'sjam', id: q.id, x: Math.round(q.tank.x), y: Math.round(q.tank.y) });
-        break;
-      }
-    }
   }
 
   // ---- 梅卡瓦迫击炮：冷却递减（发射由 mfire 消息触发：穿墙直射弹丸，30s 冷却）----
@@ -1206,7 +1183,7 @@ function sim(room, dt, now) {
     // 反弹穿深处理（普通扣穿深；90式反弹+100穿深，最多 9 次）
     const bDead = () => applyBouncePen(b, room);
 
-    // 反坦克导弹（ATGM）/ 红箭10导弹：进入 T90A 窗帘扇形 → 原路返回（干扰冷却中不生效）
+    // 反坦克导弹（ATGM）/ 红箭10导弹：进入 T90A 窗帘扇形 → 原路返回；干扰一次后冷却 20s（快照 sj）
     if (!dead && (b.isAtgm || b.isHj)) {
       // 干扰检测：任一 T90A 炮塔前方扇形（±50°、700px）
       for (const p of alive) {
@@ -1220,6 +1197,7 @@ function sim(room, dt, now) {
         if ((dx * Math.cos(jk.ta) + dy * Math.sin(jk.ta)) / d > Math.cos(Math.PI * 0.28)) {
           b.vx = -b.vx; b.vy = -b.vy; // 不受控制原路返回
           b.returned = true;
+          p.shtoraCd = 20; // 干扰一次后冷却 20s
           room.pendingEvents.push({ k: 'jam', id: b.ownerId, x: Math.round(b.x), y: Math.round(b.y) });
           break;
         }
@@ -1238,7 +1216,11 @@ function sim(room, dt, now) {
 
     // 障碍碰撞：线段检测（防高速隧穿穿墙），仅在真正撞击表面时反弹并消耗穿深（ATGM 撞障碍消失）
     if (!dead) {
+      // 性能粗筛：线段包围盒 vs 障碍 AABB——不相交直接跳过（每 tick 省 90%+ 计算）
+      const sx0 = Math.min(px, b.x) - 5, sx1 = Math.max(px, b.x) + 5;
+      const sy0 = Math.min(py, b.y) - 5, sy1 = Math.max(py, b.y) + 5;
       for (const o of room.obstacles) {
+        if (o.x > sx1 || o.x + o.w < sx0 || o.y > sy1 || o.y + o.h < sy0) continue;
         const hit = segRectHit(px, py, b.x, b.y, o);
         if (hit) {
           if (b.isAtgm || b.isHj) { dead = true; break; } // ATGM/红箭10 撞障碍即消失（不反弹不穿墙）
@@ -1729,7 +1711,7 @@ function broadcast(room) {
       am: p.ammoFire ? 1 : 0, // 弹药架起火标记（客户端剧烈火焰特效）
       mc: TANK_TYPES[p.type] && TANK_TYPES[p.type].mortar ? Math.max(0, Math.round(p.mortarCd * 10) / 10) : 0, // 迫击炮冷却剩余秒（满 30 就绪）
       ag: p.atgm || 0,      // 反坦克导弹持有数
-      jm: p.jamOn ? 1 : 0,  // T90A 窗帘干扰激活（红眼发光）
+      jm: 0,  // （保留字段：坦克本体不再被干扰，恒 0）
       sj: TANK_TYPES[p.type] && TANK_TYPES[p.type].shtora ? Math.max(0, Math.round(p.shtoraCd * 10) / 10) : 0, // 干扰冷却剩余秒（20s 满=可用）
       ap: TANK_TYPES[p.type] && TANK_TYPES[p.type].aps ? p.apsN : 0, // 99B 主动防御充能
       apo: p.apsOn ? Math.ceil(p.apsT) : 0, // 主动防御激活剩余秒
@@ -1845,7 +1827,7 @@ function onMessage(conn, buf) {
       const room = p.room;
       const mt = TANK_TYPES[p.type];
       if (!mt || !mt.mortar) break;
-      if (p.mortarCd > 0 || p.jammed || !p.tank) break;
+      if (p.mortarCd > 0 || !p.tank) break;
       p.mortarCd = 30; // 冷却 30s
       const tk = p.tank;
       const mx = tk.x + Math.cos(tk.ta) * 34, my = tk.y + Math.sin(tk.ta) * 34;
