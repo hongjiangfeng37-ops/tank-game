@@ -100,7 +100,7 @@ const TANK_TYPES = {
     era: 400,                                       // 爆反血量
     armor: { front: 1000, side: 150, back: 650 },   // 基础装甲
     armorEra: { front: 1450, side: 600, back: 1100 }, // 爆反时每部位 +450
-    pen: 850, penDrop: 50,
+    pen: 900, penDrop: 50,
     ammoZone: 'side',   // 侧面弹药架：被击穿就殉爆（无 ruSideSafe 保护）
     aps: true,          // 主动防御系统（护盾 2 次充能）
     hasLoader: false,
@@ -125,6 +125,20 @@ const TANK_TYPES = {
     pen: 500, penGain: 200, penBounceMax: 9,        // 特殊：每次反弹穿深 +200，最高反弹 9 次后消失
     ammoZone: 'rear',   // 尾舱弹药架：直接殉爆（同美军）
     frontAmmoFire: true, // 前置弹药架：爆反不满血时正面击穿 50% 弹药架起火
+    hasLoader: false,
+  },
+  hj10: {
+    // 中国 红箭10反坦克导弹车：穿深 2000 打中就死；一发装填两连发；装填 15s；
+    // 弹丸极快 + 长拖尾 + 不可反弹（撞墙消失）；装甲四面 200、无爆反（脆皮）
+    name: '中国 红箭10导弹车', maxSpeed: 280, back: 0.8, reload: 15,
+    era: 0,                                         // 无爆反
+    armor: { front: 200, side: 200, back: 200 },    // 全向 200
+    armorEra: { front: 200, side: 200, back: 200 },
+    pen: 2000, penDrop: 0,
+    mag: 2,                // 一次装填两连发
+    hjSpeed: 900,          // 导弹极快
+    instaKill: true,       // 命中即死（打中就死）
+    noBounce: true,        // 弹丸不可反弹（撞墙消失）
     hasLoader: false,
   },
 };
@@ -872,7 +886,7 @@ function spawnPlayer(room, p, seat) {
   p.shield = false;
   p.rapid = 0;
   p.triple = 0;
-  p.mag = MAG_SIZE;                       // 单发：开局已装填
+  p.mag = (TANK_TYPES[p.type] && TANK_TYPES[p.type].mag) || MAG_SIZE; // 弹匣容量（红箭10 两连发）
   p.reloadT = 0;
   p.parts = { track: true, turret: true, engine: true, ammo: true, optics: true, loader: true };
   p.repairT = 0;
@@ -885,6 +899,8 @@ function spawnPlayer(room, p, seat) {
   p.mortarShot = null;  // 迫击炮弹丸（已改为直射弹丸，此字段保留占位）
   p.jammed = false;     // 被窗帘干扰（锁定被打断）
   p.jamOn = false;      // T90A 干扰激活（扇形内有目标）
+  p.jamUntil = 0;       // 干扰持续截止时间（1.5s）
+  p.shtoraCd = 0;       // T90A 干扰冷却（干扰一次后 20s）
   p.atgm = 0;           // 反坦克导弹弹药（拾取 1 发）
   // 99B 主动防御系统（APS）：2 次充能、开启抵挡一次攻击、10s 后消失、用完冷却 60s 恢复
   p.apsN = 2;           // 剩余充能
@@ -986,13 +1002,15 @@ function sim(room, dt, now) {
     }
   }
 
-  // ---- T90A 窗帘干扰：炮塔前方扇形（±50°、700px）检测 ----
-  // 干扰范围内：梅卡瓦迫击炮锁定被打断；反坦克导弹原路返回；干扰激活时 jamOn（客户端红眼发光）
+  // ---- T90A 窗帘干扰（重做：干扰一次后冷却 20s；扇形 ±50°/700px 检测）----
+  // 效果：范围内敌人被干扰（jammed，持续 1.5s：梅卡瓦迫击炮被拒 / ATGM 原路返回）；jamOn 红眼发光
   for (const p of alive) {
-    p.jamOn = false;
-    p.jammed = false;
+    // jammed/jamOn 计时清除（1.5s 持续；now 为毫秒）
+    if (p.jamUntil && now / 1000 > p.jamUntil) { p.jamOn = false; p.jammed = false; p.jamUntil = 0; }
+    if (p.shtoraCd > 0) p.shtoraCd -= dt;
     const jt = TANK_TYPES[p.type];
     if (!jt || !jt.shtora) continue;
+    if (p.shtoraCd > 0) continue; // 冷却中不干扰
     const jk = p.tank;
     const jca = Math.cos(jk.ta), jsa = Math.sin(jk.ta);
     for (const q of alive) {
@@ -1001,8 +1019,13 @@ function sim(room, dt, now) {
       const d = Math.hypot(dx, dy);
       if (d > 700 || d < 1) continue;
       if ((dx * jca + dy * jsa) / d > Math.cos(Math.PI * 0.28)) { // 夹角 < 50°
-        p.jamOn = true;
-        q.jammed = true;
+        p.jamOn = true;           // 红眼发光（快照 jm，持续 1.5s）
+        q.jammed = true;          // 目标被干扰（mfire 拒绝 / ATGM 返回判定）
+        q.jamUntil = now / 1000 + 1.5;   // 干扰持续 1.5s（秒）
+        p.jamUntil = now / 1000 + 1.5;
+        p.shtoraCd = 20;          // 干扰一次后冷却 20s（快照 sj）
+        room.pendingEvents.push({ k: 'sjam', id: q.id, x: Math.round(q.tank.x), y: Math.round(q.tank.y) });
+        break;
       }
     }
   }
@@ -1022,10 +1045,10 @@ function sim(room, dt, now) {
     p.fireCd -= dt;
     const rapid = p.rapid > 0; p.rapid -= dt;
     const triple = p.triple > 0; p.triple -= dt;
-    // 换弹计时：装填完成后恢复弹匣（单发制）
+    // 换弹计时：装填完成后恢复弹匣（单发制；红箭10 两连发装填回满）
     if (p.reloadT > 0) {
       p.reloadT -= dt;
-      if (p.reloadT <= 0) p.mag = MAG_SIZE;
+      if (p.reloadT <= 0) p.mag = (TANK_TYPES[p.type] && TANK_TYPES[p.type].mag) || MAG_SIZE;
     }
     // 着火：持续掉血
     if (p.fireT > 0) {
@@ -1111,20 +1134,24 @@ function sim(room, dt, now) {
           room.pendingEvents.push({ k: 'boom', x: Math.round(tk.x), y: Math.round(tk.y) });
           continue; // 下一辆坦克
         }
-        p.fireCd = 0;
-        p.mag = 0;
-        // 装填时间：按型号，装弹机损坏翻倍，速射道具减半
-        let reload = tt.reload;
-        if (tt.hasLoader && p.parts.loader === false) reload *= 2; // 俄军装弹机损坏；美军无装弹机
-        if (rapid) reload *= 0.5;
-        p.reloadT = reload;
+        p.fireCd = 0.3; // 开火节流（红箭10 两连发间隔 ~0.3s；单发坦克无影响）
+        p.mag = Math.max(0, p.mag - 1); // 弹匣递减（红箭10 两连发：打一发留一发，打完才装填）
+        // 装填时间：按型号，装弹机损坏翻倍，速射道具减半（仅弹匣打空时开始装填）
+        if (p.mag === 0) {
+          let reload = tt.reload;
+          if (tt.hasLoader && p.parts.loader === false) reload *= 2; // 俄军装弹机损坏；美军无装弹机
+          if (rapid) reload *= 0.5;
+          p.reloadT = reload;
+        }
         const fire = (ang) => {
+          const bspeed = tt.hjSpeed || BULLET.speed; // 红箭10 导弹极快
           room.bullets.push({
             x: mx, y: my,
-            vx: Math.cos(ang) * BULLET.speed, vy: Math.sin(ang) * BULLET.speed,
+            vx: Math.cos(ang) * bspeed, vy: Math.sin(ang) * bspeed,
             ownerId: p.id, ownerType: p.type, pen: tt.pen, life: BULLET.life,
             spawnT: now, // 出生保护：刚出膛 200ms 内不判定命中自己（防斜射时炮口投影落入命中框吞炮弹）
             penBounces: 0, // 反弹计数（90式反弹增益用）
+            isHj: tt.instaKill || false, // 红箭10 导弹：极快、不可反弹、打中就死（长拖尾客户端渲染）
           });
         };
         if (triple) { fire(tk.ta - 0.18); fire(tk.ta); fire(tk.ta + 0.18); }
@@ -1171,12 +1198,13 @@ function sim(room, dt, now) {
     // 反弹穿深处理（普通扣穿深；90式反弹+100穿深，最多 9 次）
     const bDead = () => applyBouncePen(b, room);
 
-    // 反坦克导弹（ATGM）：慢速直线，撞墙/障碍即消失（不反弹）；进入 T90A 窗帘扇形 → 原路返回
+    // 反坦克导弹（ATGM）：慢速直线，撞墙/障碍即消失（不反弹）；进入 T90A 窗帘扇形 → 原路返回（干扰冷却中不生效）
     if (!dead && b.isAtgm) {
       // 干扰检测：任一 T90A 炮塔前方扇形（±50°、700px）
       for (const p of alive) {
         const jt = TANK_TYPES[p.type];
         if (!jt || !jt.shtora || b.returned) continue;
+        if (p.shtoraCd > 0) continue; // 干扰冷却中（20s）不返回导弹
         const jk = p.tank;
         const dx = b.x - jk.x, dy = b.y - jk.y;
         const d = Math.hypot(dx, dy);
@@ -1192,20 +1220,20 @@ function sim(room, dt, now) {
           b.y < WALL_T + BULLET.r || b.y > WORLD.h - WALL_T - BULLET.r) { dead = true; }
     }
 
-    // 边界反弹（迫击炮穿墙：越界即消失，不反弹）
-    if (!dead && !b.isAtgm && !b.isMortar && b.x < WALL_T + BULLET.r) { b.x = WALL_T + BULLET.r; b.vx = -b.vx; if (bDead()) dead = true; }
-    if (!dead && !b.isAtgm && !b.isMortar && b.x > WORLD.w - WALL_T - BULLET.r) { b.x = WORLD.w - WALL_T - BULLET.r; b.vx = -b.vx; if (bDead()) dead = true; }
-    if (!dead && !b.isAtgm && !b.isMortar && b.y < WALL_T + BULLET.r) { b.y = WALL_T + BULLET.r; b.vy = -b.vy; if (bDead()) dead = true; }
-    if (!dead && !b.isAtgm && !b.isMortar && b.y > WORLD.h - WALL_T - BULLET.r) { b.y = WORLD.h - WALL_T - BULLET.r; b.vy = -b.vy; if (bDead()) dead = true; }
-    // 迫击炮越界消失
-    if (!dead && b.isMortar && (b.x < WALL_T || b.x > WORLD.w - WALL_T || b.y < WALL_T || b.y > WORLD.h - WALL_T)) dead = true;
+    // 边界反弹（迫击炮穿墙越界消失；红箭10 不可反弹越界消失）
+    if (!dead && !b.isAtgm && !b.isMortar && !b.isHj && b.x < WALL_T + BULLET.r) { b.x = WALL_T + BULLET.r; b.vx = -b.vx; if (bDead()) dead = true; }
+    if (!dead && !b.isAtgm && !b.isMortar && !b.isHj && b.x > WORLD.w - WALL_T - BULLET.r) { b.x = WORLD.w - WALL_T - BULLET.r; b.vx = -b.vx; if (bDead()) dead = true; }
+    if (!dead && !b.isAtgm && !b.isMortar && !b.isHj && b.y < WALL_T + BULLET.r) { b.y = WALL_T + BULLET.r; b.vy = -b.vy; if (bDead()) dead = true; }
+    if (!dead && !b.isAtgm && !b.isMortar && !b.isHj && b.y > WORLD.h - WALL_T - BULLET.r) { b.y = WORLD.h - WALL_T - BULLET.r; b.vy = -b.vy; if (bDead()) dead = true; }
+    // 迫击炮/红箭10 越界消失
+    if (!dead && (b.isMortar || b.isHj) && (b.x < WALL_T || b.x > WORLD.w - WALL_T || b.y < WALL_T || b.y > WORLD.h - WALL_T)) dead = true;
 
     // 障碍碰撞：线段检测（防高速隧穿穿墙），仅在真正撞击表面时反弹并消耗穿深（ATGM 撞障碍消失）
     if (!dead) {
       for (const o of room.obstacles) {
         const hit = segRectHit(px, py, b.x, b.y, o);
         if (hit) {
-          if (b.isAtgm) { dead = true; break; } // ATGM 撞障碍即消失（不反弹不穿墙）
+          if (b.isAtgm || b.isHj) { dead = true; break; } // ATGM/红箭10 撞障碍即消失（不反弹不穿墙）
           if (b.isMortar) break; // 迫击炮弹穿墙（高抛弧线，无视障碍）
           b.x = hit.x; b.y = hit.y;
           const vn = b.vx * hit.nx + b.vy * hit.ny;
@@ -1218,10 +1246,11 @@ function sim(room, dt, now) {
         }
       }
     }
-    // 兜底：子弹中心进入障碍内部（擦角/极端情况）→ 强制按最近表面推出并反弹，杜绝穿墙（迫击炮跳过）
+    // 兜底：子弹中心进入障碍内部（擦角/极端情况）→ 强制按最近表面推出并反弹，杜绝穿墙（迫击炮穿墙跳过；红箭10 撞墙消失）
     if (!dead && !b.isMortar) {
       for (const o of room.obstacles) {
         if (b.x > o.x && b.x < o.x + o.w && b.y > o.y && b.y < o.y + o.h) {
+          if (b.isHj) { dead = true; break; } // 红箭10 撞墙即消失
           const dl = b.x - o.x, dr = o.x + o.w - b.x;
           const dt = b.y - o.y, db = o.y + o.h - b.y;
           const min = Math.min(dl, dr, dt, db);
@@ -1269,6 +1298,16 @@ function sim(room, dt, now) {
             q.apsOn = false;
             q.apsT = 0;
             room.pendingEvents.push({ k: 'apsblock', id: q.id, x: Math.round(t2.x), y: Math.round(t2.y) });
+          } else if (b.isHj) {
+            // 红箭10 反坦克导弹：打中就死（无视装甲/爆反，护盾/APS 已在上方优先抵挡）
+            q.alive = false;
+            q.deadAt = now;
+            const killer = room.players.get(b.ownerId);
+            if (killer && killer.id !== q.id) {
+              killer.kills++;
+              room.pendingEvents.push({ k: 'kill', killer: killer.name, victim: q.name, reason: '红箭10', x: Math.round(t2.x), y: Math.round(t2.y) });
+            }
+            room.pendingEvents.push({ k: 'boom', x: Math.round(t2.x), y: Math.round(t2.y) });
           } else {
             const tt = TANK_TYPES[q.type];
             // 部位判定：命中点在车体的前后/侧面位置（与贴图视觉一致）
@@ -1540,6 +1579,14 @@ function send(conn, obj) {
   try { conn.socket.write(wsFrame(0x1, Buffer.from(JSON.stringify(obj)), false)); } catch (e) { /* ignore */ }
 }
 
+// 广播优化：一次序列化，全部玩家复用同一帧（多人房间 CPU 显著下降）
+function broadcastFrame(room, frameBuf) {
+  for (const p of room.players.values()) {
+    if (!p.conn || p.conn.dead) continue;
+    try { p.conn.socket.write(wsFrame(0x1, frameBuf, false)); } catch (e) { /* ignore */ }
+  }
+}
+
 // ---------------- 公网通道（cloudflared quick tunnel，一键生成公网链接） ----------------
 let actualPort = WANTED_PORT;
 const tunnel = { state: 'off', url: null, proc: null };
@@ -1548,9 +1595,8 @@ let tunnelError = '';
 function broadcastTunnel(msg) {
   const m = { t: 'tunnel' };
   for (const k of Object.keys(msg)) m[k] = msg[k];
-  for (const room of rooms.values()) {
-    for (const p of room.players.values()) send(p.conn, m);
-  }
+  const frame = Buffer.from(JSON.stringify(m));
+  for (const room of rooms.values()) broadcastFrame(room, frame);
 }
 
 function findCloudflared() {
@@ -1648,7 +1694,7 @@ function broadcastRoom(room) {
     publicUrl: tunnel.state === 'on' ? tunnel.url : null,
     players: roster(room),
   };
-  for (const p of room.players.values()) send(p.conn, msg);
+  broadcastFrame(room, Buffer.from(JSON.stringify(msg)));
 }
 
 function broadcast(room) {
@@ -1676,6 +1722,7 @@ function broadcast(room) {
       mc: TANK_TYPES[p.type] && TANK_TYPES[p.type].mortar ? Math.max(0, Math.round(p.mortarCd * 10) / 10) : 0, // 迫击炮冷却剩余秒（满 30 就绪）
       ag: p.atgm || 0,      // 反坦克导弹持有数
       jm: p.jamOn ? 1 : 0,  // T90A 窗帘干扰激活（红眼发光）
+      sj: TANK_TYPES[p.type] && TANK_TYPES[p.type].shtora ? Math.max(0, Math.round(p.shtoraCd * 10) / 10) : 0, // 干扰冷却剩余秒（20s 满=可用）
       ap: TANK_TYPES[p.type] && TANK_TYPES[p.type].aps ? p.apsN : 0, // 99B 主动防御充能
       apo: p.apsOn ? Math.ceil(p.apsT) : 0, // 主动防御激活剩余秒
       apc: p.apsCd > 0 ? Math.ceil(p.apsCd) : 0, // 主动防御冷却剩余秒
@@ -1695,11 +1742,12 @@ function broadcast(room) {
       o: b.ownerId,
       pen: Math.round(b.pen),
       ag: b.isAtgm ? 1 : 0, // 反坦克导弹标记（客户端样式）
+      hj: b.isHj ? 1 : 0,   // 红箭10 导弹标记（客户端长拖尾渲染）
     })),
     pups: room.pups.map((pu) => ({ x: Math.round(pu.x), y: Math.round(pu.y), type: pu.type, life: Math.round(pu.life) })),
     events: room.pendingEvents.splice(0),
   };
-  for (const p of room.players.values()) send(p.conn, msg);
+  broadcastFrame(room, Buffer.from(JSON.stringify(msg)));
 }
 
 // ---------------- 客户端消息 ----------------
@@ -1828,11 +1876,11 @@ function onMessage(conn, buf) {
     case 'pick': {
       // 大厅中选择坦克型号
       if (!p || !p.room || p.room.phase !== 'lobby') break;
-      if (msg.type === 'us' || msg.type === 'ru' || msg.type === 'jp' || msg.type === 'il' || msg.type === 'cn' || msg.type === 'de') {
+      if (msg.type === 'us' || msg.type === 'ru' || msg.type === 'jp' || msg.type === 'il' || msg.type === 'cn' || msg.type === 'de' || msg.type === 'hj10') {
         p.type = msg.type;
         p.era = initialEra(msg.type);
         // 单人模式：AI 自动选择与玩家相反的型号（us↔ru；其余对手选 ru）
-        const opposite = { us: 'ru', ru: 'us', jp: 'ru', il: 'ru', cn: 'ru', de: 'ru' }[msg.type];
+        const opposite = { us: 'ru', ru: 'us', jp: 'ru', il: 'ru', cn: 'ru', de: 'ru', hj10: 'ru' }[msg.type];
         for (const q of p.room.players.values()) {
           if (q.isBot && q.type === msg.type) {
             q.type = opposite;
