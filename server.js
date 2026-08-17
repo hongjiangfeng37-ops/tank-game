@@ -1982,7 +1982,9 @@ function serveStatic(req, res) {
     }
     res.writeHead(200, {
       'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream',
-      'Cache-Control': 'no-cache',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
     });
     res.end(data);
   });
