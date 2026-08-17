@@ -167,7 +167,7 @@
   let selfRepair = 0;           // 维修进度(秒)
   let selfFire = 0;             // 起火剩余秒数
   let selfAmFire = 0;           // 弹药架起火标记（更剧烈特效）
-  let selfMortar = 0;           // 梅卡瓦迫击炮锁定进度 0-3
+  let selfMortar = 0;           // 梅卡瓦迫击炮冷却剩余秒（0=就绪）
   let selfAg = 0;               // 反坦克导弹持有数
   let selfJm = 0;               // 自己被窗帘干扰
   let mortarMode = false;       // 梅卡瓦当前火炮模式：false=主炮 true=迫击炮
@@ -436,7 +436,7 @@
       selfRepair = me.rp || 0;
       selfFire = me.fr || 0;
       selfAmFire = me.am || 0;
-      selfMortar = me.mt || 0;   // 迫击炮锁定进度
+      selfMortar = me.mc || 0;   // 迫击炮冷却剩余秒（30s 满=就绪）
       selfAg = me.ag || 0;       // 反坦克导弹
       selfJm = me.jm || 0;       // 被窗帘干扰
       selfApsN = me.ap || 0;     // 主动防御充能
@@ -524,9 +524,9 @@
           addKillfeed(null, e.name + ' 离开');
           break;
         case 'mshot':
-          // 迫击炮发射：落点标记（无视地形弧线）
-          spawnParticles(e.tx, e.ty, '#ff7043', 10, 3.5);
-          if (e.id === myId) showDamageNote('💣 迫击炮已发射！', true);
+          // 迫击炮发射：炮口闪光
+          spawnParticles(e.x, e.y, '#ff7043', 10, 3.5);
+          if (e.id === myId) showDamageNote('💣 迫击炮发射！30s 冷却', true);
           break;
         case 'mboom':
           spawnParticles(e.x, e.y, '#ff8a65', 22, 4);
@@ -624,7 +624,7 @@
     keys[e.code] = true;
     // 梅卡瓦：1/2 切换主炮/迫击炮
     if (e.code === 'Digit1' && selfType === 'il') { mortarMode = false; showDamageNote('🔫 主炮模式', true); }
-    if (e.code === 'Digit2' && selfType === 'il') { mortarMode = true; showDamageNote('💣 迫击炮模式（静止锁定）', true); }
+    if (e.code === 'Digit2' && selfType === 'il') { mortarMode = true; showDamageNote('💣 迫击炮模式（穿墙直射，30s 一发）', true); }
     // B 键发射反坦克导弹
     if (e.code === 'KeyB' && selfAg > 0 && ws && ws.readyState === 1 && phase === 'play') {
       ws.send(JSON.stringify({ t: 'atgm' }));
@@ -729,7 +729,7 @@
     mortarBtn.addEventListener('click', () => {
       mortarMode = !mortarMode;
       mortarBtn.classList.toggle('on', mortarMode);
-      showDamageNote(mortarMode ? '💣 迫击炮模式（静止锁定）' : '🔫 主炮模式', true);
+      showDamageNote(mortarMode ? '💣 迫击炮模式（穿墙直射，30s 一发）' : '🔫 主炮模式', true);
     });
   }
   const atgmBtn = document.getElementById('btnAtgm');
@@ -994,26 +994,27 @@
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
     drawFog();
-    // 梅卡瓦炮管模式指示 + 迫击炮锁定进度（常显，明确操作反馈）
+    // 梅卡瓦炮管模式指示 + 迫击炮冷却条（常显，明确操作反馈）
     if (selfType === 'il' && selfAlive && phase === 'play') {
       const bw = 210, bh = 10;
       const bx = canvas.clientWidth / 2 - bw / 2, by = canvas.clientHeight - 66;
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
       rr(bx - 3, by - 3, bw + 6, bh + 6, 6); ctx.fill();
+      // 冷却条：迫击炮模式下显示 30s 冷却倒计时（红）或就绪（绿满）
       if (mortarMode) {
-        const frac = Math.min(1, selfMortar / 3);
-        ctx.fillStyle = selfJm ? '#ff5d5d' : (frac >= 1 ? '#66bb6a' : '#ffca28');
-        rr(bx, by, bw * frac, bh, 4); ctx.fill();
+        const cdFrac = Math.max(0, Math.min(1, 1 - selfMortar / 30));
+        ctx.fillStyle = selfJm ? '#ff5d5d' : (selfMortar <= 0 ? '#66bb6a' : '#ff5252');
+        rr(bx, by, bw * cdFrac, bh, 4); ctx.fill();
       }
       ctx.fillStyle = '#fff';
       ctx.font = '12px sans-serif';
       ctx.textAlign = 'center';
       let mText;
       if (mortarMode) {
-        mText = selfJm ? '📡 被窗帘干扰！锁定中断' :
-          (selfMortar >= 3 ? '✅ 迫击炮锁定完成，开火发射！' : '💣 迫击炮锁定中… ' + Math.round(selfMortar) + '/3（静止+敌人靠近）');
+        mText = selfJm ? '📡 被窗帘干扰！无法发射' :
+          (selfMortar > 0 ? '💣 迫击炮冷却 ' + Math.ceil(selfMortar) + 's' : '✅ 迫击炮就绪，开火！');
       } else {
-        mText = '🔫 主炮模式（按 2 切换迫击炮）';
+        mText = '🔫 主炮模式（按 2 切换迫击炮）' + (selfMortar > 0 ? '　💣 冷却 ' + Math.ceil(selfMortar) + 's' : '　💣 就绪');
       }
       ctx.fillText(mText, canvas.clientWidth / 2, by - 7);
     }
@@ -1029,32 +1030,26 @@
         pb.classList.toggle('on', selfApsOn > 0);
       }
     }
-    // 99B 主动防御 HUD 状态
+    // 99B 主动防御 HUD 状态（含激活/冷却进度条）
     if (selfType === 'cn' && selfAlive && phase === 'play') {
       const sby = canvas.clientHeight - 88;
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      rr(canvas.clientWidth / 2 - 95, sby - 3, 190, 22, 8); ctx.fill();
+      rr(canvas.clientWidth / 2 - 95, sby - 3, 190, 24, 8); ctx.fill();
       ctx.font = '12px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillStyle = selfApsOn > 0 ? '#4dd0e1' : (selfApsCd > 0 ? '#ff8a80' : '#fff');
       const txt = selfApsOn > 0 ? ('🛡️ 主动防御激活 ' + selfApsOn + 's') :
         (selfApsCd > 0 ? ('🛡️ 冷却中 ' + selfApsCd + 's') :
           ('🛡️ 主动防御 x' + selfApsN + '（按 E 开启）'));
-      ctx.fillText(txt, canvas.clientWidth / 2, sby + 11);
-    }
-    if (mortarMode && selfType === 'il' && selfAlive && phase === 'play') {
-      const bw = 170, bh = 10;
-      const bx = canvas.clientWidth / 2 - bw / 2, by = canvas.clientHeight - 66;
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      rr(bx - 3, by - 3, bw + 6, bh + 6, 6); ctx.fill();
-      const frac = Math.min(1, selfMortar / 3);
-      ctx.fillStyle = selfJm ? '#ff5d5d' : (frac >= 1 ? '#66bb6a' : '#ffca28');
-      rr(bx, by, bw * frac, bh, 4); ctx.fill();
-      ctx.fillStyle = '#fff';
-      ctx.font = '12px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(selfJm ? '📡 被窗帘干扰！锁定中断' : (frac >= 1 ? '✅ 锁定完成，开火发射！' : '💣 迫击炮锁定中… ' + Math.round(selfMortar) + '/3'),
-        canvas.clientWidth / 2, by - 7);
+      ctx.fillText(txt, canvas.clientWidth / 2, sby + 10);
+      // 进度条：激活 10s 递减 / 大冷却 60s 递减
+      const rem = selfApsOn > 0 ? selfApsOn : selfApsCd;
+      if (rem > 0) {
+        const max = selfApsOn > 0 ? 10 : 60;
+        const frac = Math.max(0, Math.min(1, rem / max));
+        ctx.fillStyle = selfApsOn > 0 ? '#4dd0e1' : '#ff8a80';
+        rr(canvas.clientWidth / 2 - 92, sby + 14, 184 * frac, 5, 2.5); ctx.fill();
+      }
     }
   }
 
@@ -1196,26 +1191,31 @@
       // 侧裙板上下缘
       '<rect x="5" y="16" width="90" height="3.5" fill="#2a3526"/>' +
       '<rect x="5" y="58.5" width="90" height="3.5" fill="#2a3526"/>' +
-      // 车体主体（四四方方）
+      // 车体主体（四四方方 + 右侧圆角）
       '<path d="M20,17.5 L90,17.5 Q97,17.5 97,23.5 L97,54.5 Q97,60.5 90,60.5 L20,60.5 L12,50.5 L12,27.5 Z" fill="url(#rubg)" stroke="#1c2313" stroke-width="1.5"/>' +
-      // 黑色迷彩斑（T90A 现代涂装）
+      // 俄军三色迷彩斑（绿底 + 棕 + 黑）
       '<path d="M30,19 L46,19 L42,30 L28,30 Z" fill="#222b18"/>' +
-      '<path d="M70,34 L86,34 L84,48 L68,46 Z" fill="#222b18"/>' +
-      '<path d="M24,44 L38,44 L36,56 L22,56 Z" fill="#39452b"/>' +
-      // 前部弧形铸造首上（T-90 标志：前缘外凸弧面，非平楔）+ V形导流犁
+      '<path d="M66,18 L80,18 L78,29 L64,27 Z" fill="#5a4d33"/>' +
+      '<path d="M22,34 L38,34 L35,45 L20,44 Z" fill="#4a4433"/>' +
+      '<path d="M60,44 L78,44 L76,56 L58,52 Z" fill="#222b18"/>' +
+      '<path d="M44,20 L56,20 L54,28 L42,27 Z" fill="#39452b"/>' +
+      '<path d="M28,50 L42,50 L40,58 L26,57 Z" fill="#39452b"/>' +
+      // 前部弧形铸造首上（T-90 标志：前缘外凸弧面）+ V形导流犁
       '<path d="M54,19 L76,19 Q95,20 98,27 Q99.6,33 99.6,39 Q99.6,45 98,51 Q95,58 76,59 L54,59 L42,39 Z" fill="#4c5a3c" stroke="#1c2313" stroke-width="1"/>' +
       '<path d="M54,19 L76,39 L54,59 Z" fill="none" stroke="#2a3526" stroke-width="1"/>' +
-      // 外层爆反分层：车体前端爆反块（2x2）+ 侧缘爆反条
-      '<rect x="76" y="20" width="6.5" height="6.5" fill="#4d5e35" stroke="#1c2313" stroke-width="0.9"/>' +
-      '<rect x="86" y="20" width="7" height="6.5" fill="#4d5e35" stroke="#1c2313" stroke-width="0.9"/>' +
-      '<rect x="76" y="28" width="6.5" height="6.5" fill="#4d5e35" stroke="#1c2313" stroke-width="0.9"/>' +
-      '<rect x="86" y="28" width="7" height="6.5" fill="#4d5e35" stroke="#1c2313" stroke-width="0.9"/>' +
-      '<rect x="76" y="43" width="6.5" height="6.5" fill="#4d5e35" stroke="#1c2313" stroke-width="0.9"/>' +
-      '<rect x="86" y="43" width="7" height="6.5" fill="#4d5e35" stroke="#1c2313" stroke-width="0.9"/>' +
-      '<rect x="76" y="51.5" width="6.5" height="6.5" fill="#4d5e35" stroke="#1c2313" stroke-width="0.9"/>' +
-      '<rect x="86" y="51.5" width="7" height="6.5" fill="#4d5e35" stroke="#1c2313" stroke-width="0.9"/>' +
-      '<rect x="14" y="19" width="6" height="40" fill="#4d5e35" stroke="#1c2313" stroke-width="0.9"/>' + // 尾部爆反条
-      // 尾部散热格栅
+      // 首上爆反：沿弧面 V 形两排（真实 T-90 首上爆反排列）
+      '<rect x="62" y="20.5" width="6" height="6" fill="#4d5e35" stroke="#1c2313" stroke-width="0.9"/>' +
+      '<rect x="71" y="20.5" width="6" height="6" fill="#4d5e35" stroke="#1c2313" stroke-width="0.9"/>' +
+      '<rect x="82" y="24" width="6" height="6" fill="#4d5e35" stroke="#1c2313" stroke-width="0.9"/>' +
+      '<rect x="90" y="28" width="6" height="6" fill="#4d5e35" stroke="#1c2313" stroke-width="0.9"/>' +
+      '<rect x="90" y="44" width="6" height="6" fill="#4d5e35" stroke="#1c2313" stroke-width="0.9"/>' +
+      '<rect x="82" y="48" width="6" height="6" fill="#4d5e35" stroke="#1c2313" stroke-width="0.9"/>' +
+      '<rect x="71" y="51.5" width="6" height="6" fill="#4d5e35" stroke="#1c2313" stroke-width="0.9"/>' +
+      '<rect x="62" y="51.5" width="6" height="6" fill="#4d5e35" stroke="#1c2313" stroke-width="0.9"/>' +
+      // 侧面裙板爆反条（中段）
+      '<rect x="34" y="17" width="5" height="46" fill="#4d5e35" stroke="#1c2313" stroke-width="0.9"/>' +
+      // 尾部爆反条 + 散热格栅
+      '<rect x="14" y="19" width="6" height="40" fill="#4d5e35" stroke="#1c2313" stroke-width="0.9"/>' +
       '<rect x="13" y="23" width="9" height="32" rx="2" fill="#3d4a34" stroke="#1c2313" stroke-width="0.9"/>' +
       '<line x1="13" y1="29.8" x2="22" y2="29.8" stroke="#1c2313" stroke-width="0.9"/>' +
       '<line x1="13" y1="36.6" x2="22" y2="36.6" stroke="#1c2313" stroke-width="0.9"/>' +
@@ -1248,33 +1248,32 @@
       // 第0.5层：边缘环带（爆反裁剪后露出的主体色环）+ 虚线装甲接缝
       '<circle cx="27" cy="26" r="17.9" fill="none" stroke="#131a0e" stroke-width="0.8" stroke-dasharray="2.2 2.2" opacity="0.8"/>' +
       '<circle cx="27" cy="26" r="16.9" fill="none" stroke="#131a0e" stroke-width="0.7" opacity="0.5"/>' +
-      // 第1层：爆反块层（4x4 大块，斜向渐变立体，裁剪成圆）
+      // 第1层：正面爆反层（T-90 特征：爆反只覆盖炮塔正面右侧弧带，3 列 × 4 行，裁成圆）
       '<g clip-path="url(#ruclip)">' +
-      '<rect x="9.5" y="9.5" width="8" height="8" fill="url(#eraG)" stroke="#1c2415" stroke-width="1.1"/>' +
-      '<rect x="18.5" y="9.5" width="8" height="8" fill="url(#eraG)" stroke="#1c2415" stroke-width="1.1"/>' +
-      '<rect x="27.5" y="9.5" width="8" height="8" fill="url(#eraG)" stroke="#1c2415" stroke-width="1.1"/>' +
-      '<rect x="36.5" y="9.5" width="8" height="8" fill="url(#eraG)" stroke="#1c2415" stroke-width="1.1"/>' +
-      '<rect x="9.5" y="18.5" width="8" height="8" fill="url(#eraG)" stroke="#1c2415" stroke-width="1.1"/>' +
-      '<rect x="18.5" y="18.5" width="8" height="8" fill="url(#eraG)" stroke="#1c2415" stroke-width="1.1"/>' +
-      '<rect x="27.5" y="18.5" width="8" height="8" fill="url(#eraG)" stroke="#1c2415" stroke-width="1.1"/>' +
-      '<rect x="36.5" y="18.5" width="8" height="8" fill="url(#eraG)" stroke="#1c2415" stroke-width="1.1"/>' +
-      '<rect x="9.5" y="27.5" width="8" height="8" fill="url(#eraG)" stroke="#1c2415" stroke-width="1.1"/>' +
-      '<rect x="18.5" y="27.5" width="8" height="8" fill="url(#eraG)" stroke="#1c2415" stroke-width="1.1"/>' +
-      '<rect x="27.5" y="27.5" width="8" height="8" fill="url(#eraG)" stroke="#1c2415" stroke-width="1.1"/>' +
-      '<rect x="36.5" y="27.5" width="8" height="8" fill="url(#eraG)" stroke="#1c2415" stroke-width="1.1"/>' +
-      '<rect x="9.5" y="36.5" width="8" height="8" fill="url(#eraG)" stroke="#1c2415" stroke-width="1.1"/>' +
-      '<rect x="18.5" y="36.5" width="8" height="8" fill="url(#eraG)" stroke="#1c2415" stroke-width="1.1"/>' +
-      '<rect x="27.5" y="36.5" width="8" height="8" fill="url(#eraG)" stroke="#1c2415" stroke-width="1.1"/>' +
-      '<rect x="36.5" y="36.5" width="8" height="8" fill="url(#eraG)" stroke="#1c2415" stroke-width="1.1"/>' +
+      '<rect x="28.5" y="9.5" width="8" height="8" fill="url(#eraG)" stroke="#1c2415" stroke-width="1.1"/>' +
+      '<rect x="37.5" y="9.5" width="8" height="8" fill="url(#eraG)" stroke="#1c2415" stroke-width="1.1"/>' +
+      '<rect x="46" y="11" width="8" height="8" fill="url(#eraG)" stroke="#1c2415" stroke-width="1.1"/>' +
+      '<rect x="28.5" y="18.5" width="8" height="8" fill="url(#eraG)" stroke="#1c2415" stroke-width="1.1"/>' +
+      '<rect x="37.5" y="18.5" width="8" height="8" fill="url(#eraG)" stroke="#1c2415" stroke-width="1.1"/>' +
+      '<rect x="46" y="20" width="8" height="8" fill="url(#eraG)" stroke="#1c2415" stroke-width="1.1"/>' +
+      '<rect x="28.5" y="27.5" width="8" height="8" fill="url(#eraG)" stroke="#1c2415" stroke-width="1.1"/>' +
+      '<rect x="37.5" y="27.5" width="8" height="8" fill="url(#eraG)" stroke="#1c2415" stroke-width="1.1"/>' +
+      '<rect x="46" y="29" width="8" height="8" fill="url(#eraG)" stroke="#1c2415" stroke-width="1.1"/>' +
+      '<rect x="28.5" y="36.5" width="8" height="8" fill="url(#eraG)" stroke="#1c2415" stroke-width="1.1"/>' +
+      '<rect x="37.5" y="36.5" width="8" height="8" fill="url(#eraG)" stroke="#1c2415" stroke-width="1.1"/>' +
+      '<rect x="46" y="38" width="8" height="8" fill="url(#eraG)" stroke="#1c2415" stroke-width="1.1"/>' +
       '</g>' +
-      // 第3层：中心凸台（舱盖平台，抬高的圆台）
-      '<circle cx="27" cy="26.5" r="9.2" fill="#4e5f40" stroke="#1b2214" stroke-width="1"/>' +
-      '<circle cx="27" cy="26.5" r="8.2" fill="none" stroke="#8aa06e" stroke-width="1" opacity="0.55"/>' +
-      // 第4层：大舱盖（带把手）
-      '<circle cx="27" cy="26.5" r="6.6" fill="url(#hatchG)" stroke="#131a0e" stroke-width="1.2"/>' +
-      '<circle cx="27" cy="26.5" r="2.4" fill="#2f3a26"/>' +
-      '<line x1="21.5" y1="26.5" x2="32.5" y2="26.5" stroke="#131a0e" stroke-width="0.9" opacity="0.8"/>' +
-      '<line x1="27" y1="21" x2="27" y2="23.5" stroke="#131a0e" stroke-width="0.9" opacity="0.8"/>' +
+      // 第2层：车长周视镜座（炮塔顶部中央偏左，T-90 特征）
+      '<circle cx="19" cy="17" r="3.6" fill="#4e5f40" stroke="#1b2214" stroke-width="1"/>' +
+      '<circle cx="19" cy="17" r="2.6" fill="url(#hatchG)" stroke="#131a0e" stroke-width="0.9"/>' +
+      '<circle cx="19" cy="17" r="1" fill="#d8e2cc"/>' +
+      // 第3层：双舱盖（车长右前 + 炮手左后，T-90 双舱布局）
+      '<circle cx="30" cy="17.5" r="4" fill="url(#hatchG)" stroke="#131a0e" stroke-width="1.1"/>' +
+      '<circle cx="30" cy="17.5" r="1.5" fill="#2f3a26"/>' +
+      '<line x1="26.8" y1="17.5" x2="33.2" y2="17.5" stroke="#131a0e" stroke-width="0.8" opacity="0.8"/>' +
+      '<circle cx="20" cy="33" r="3.6" fill="url(#hatchG)" stroke="#131a0e" stroke-width="1.1"/>' +
+      '<circle cx="20" cy="33" r="1.3" fill="#2f3a26"/>' +
+      '<line x1="17.2" y1="33" x2="22.8" y2="33" stroke="#131a0e" stroke-width="0.8" opacity="0.8"/>' +
       // 第5层：设备（大炮长镜带底座、大红外灯、天线、储物箱）
       '<rect x="25.5" y="5" width="9.5" height="4.4" rx="1.2" fill="#1c2415" stroke="#0e130a" stroke-width="0.8"/>' +
       '<rect x="27" y="5.8" width="6" height="2.4" rx="0.8" fill="#5c6e47"/>' +
@@ -1330,18 +1329,18 @@
       '<defs><linearGradient id="jpt" x1="0" y1="0" x2="0" y2="1">' +
       '<stop offset="0" stop-color="#4d5a3c"/><stop offset="1" stop-color="#39432c"/>' +
       '</linearGradient></defs>' +
-      // 第1层：方形炮塔主体（箱形，四四方方）
-      '<path d="M52,16 L44,7 L14,7 L6,16 L6,36 L14,45 L44,45 L52,36 Z" fill="url(#jpt)" stroke="#23291f" stroke-width="1.5"/>' +
+      // 第1层：方形炮塔主体（90式=矩形箱式，边角小斜，与 M1 六边形/梅卡瓦窄条/99B方盒 区分）
+      '<path d="M50,15 L43,8 L16,8 L8,15 L8,37 L16,44 L43,44 L50,37 Z" fill="url(#jpt)" stroke="#23291f" stroke-width="1.5"/>' +
       // 第2层：顶部装甲面板（内缩方框，分层感）
-      '<path d="M48,18 L42,11 L17,11 L11,18 L11,34 L17,41 L42,41 L48,34 Z" fill="#4a573e" stroke="#23291f" stroke-width="1"/>' +
+      '<path d="M46,17 L40,12 L19,12 L13,17 L13,35 L19,40 L40,40 L46,35 Z" fill="#4a573e" stroke="#23291f" stroke-width="1"/>' +
       '<path d="M48,18 L17,11" stroke="#6d7a54" stroke-width="0.9" opacity="0.6"/>' +
       // 迷彩斑块（炮塔面）
       '<path d="M44,13 L50,20 L44,27 L38,20 Z" fill="#6b5a3a"/>' +
       '<path d="M12,23 L21,23 L19,34 L10,32 Z" fill="#272d23"/>' +
       '<path d="M30,35 L41,35 L38,43 L27,40 Z" fill="#6b5a3a"/>' +
-      // 第3层：方形炮盾（前尖根部）
-      '<path d="M47,20 L53,26 L47,32 L41,26 Z" fill="#3a442e" stroke="#23291f" stroke-width="1"/>' +
-      '<path d="M46,22 L51,26 L46,30 L43,26 Z" fill="#4a573e" stroke="#23291f" stroke-width="0.7"/>' +
+      // 第3层：方形炮盾（前缘根部）
+      '<path d="M44,21 L50,26 L44,31 L39,26 Z" fill="#3a442e" stroke="#23291f" stroke-width="1"/>' +
+      '<path d="M43,23 L48,26 L43,29 L40,26 Z" fill="#4a573e" stroke="#23291f" stroke-width="0.7"/>' +
       // 第4层：双舱盖凸台（车长右前 + 炮手左前，90式特征）
       '<circle cx="30" cy="19" r="5.6" fill="#3a442e" stroke="#23291f" stroke-width="1"/>' +
       '<circle cx="30" cy="19" r="4.3" fill="#59684a" stroke="#23291f" stroke-width="1"/>' +
@@ -1358,76 +1357,88 @@
       '<rect x="7.5" y="30" width="5.5" height="6.5" rx="1" fill="#3a442e" stroke="#23291f" stroke-width="0.8"/>' +
       '</svg>',
     // 以军 梅卡瓦车体：灰色、发动机前置 → 车体前宽后窄（梯形俯视，与所有矩形车体区分）、前部发动机舱+格栅、炮塔位偏后
+    // 以军 梅卡瓦Mk4车体：灰、前宽后窄梯形（前置发动机）、车头推土铲、前置发动机舱格栅、侧裙板
     ilBody: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 84">' +
       '<defs><linearGradient id="ilbg" x1="0" y1="0" x2="0" y2="1">' +
-      '<stop offset="0" stop-color="#96999e"/><stop offset="0.5" stop-color="#7e8187"/><stop offset="1" stop-color="#63666b"/>' +
+      '<stop offset="0" stop-color="#8e9196"/><stop offset="0.5" stop-color="#74777d"/><stop offset="1" stop-color="#5a5d63"/>' +
       '</linearGradient>' +
       '<linearGradient id="ileng" x1="0" y1="0" x2="0" y2="1">' +
-      '<stop offset="0" stop-color="#85888e"/><stop offset="1" stop-color="#5a5d63"/>' +
+      '<stop offset="0" stop-color="#7c7f85"/><stop offset="1" stop-color="#52555b"/>' +
       '</linearGradient></defs>' +
-      // 履带 + 履带齿（梅卡瓦履带宽，前部更宽）
-      '<rect x="2" y="3" width="96" height="14" rx="6" fill="#191a1d"/>' +
-      '<rect x="2" y="67" width="96" height="14" rx="6" fill="#191a1d"/>' +
-      '<line x1="8" y1="10" x2="97" y2="10" stroke="#0c0d0f" stroke-width="4.5" stroke-dasharray="2.8 4.6"/>' +
-      '<line x1="8" y1="74" x2="97" y2="74" stroke="#0c0d0f" stroke-width="4.5" stroke-dasharray="2.8 4.6"/>' +
+      // 履带 + 履带齿（梅卡瓦履带宽）
+      '<rect x="2" y="3" width="96" height="14" rx="6" fill="#151619"/>' +
+      '<rect x="2" y="67" width="96" height="14" rx="6" fill="#151619"/>' +
+      '<line x1="8" y1="10" x2="97" y2="10" stroke="#0a0b0d" stroke-width="4.5" stroke-dasharray="3 4.6"/>' +
+      '<line x1="8" y1="74" x2="97" y2="74" stroke="#0a0b0d" stroke-width="4.5" stroke-dasharray="3 4.6"/>' +
       // 侧裙板上缘
-      '<rect x="5" y="18" width="90" height="3" fill="#4a4c50"/>' +
-      '<rect x="5" y="63" width="90" height="3" fill="#4a4c50"/>' +
-      // 车体主体：前宽后窄的梯形（梅卡瓦标志性俯视轮廓）
-      '<path d="M40,16 L97,16 Q100,16 100,23 L100,61 Q100,68 97,68 L40,68 L20,57 L20,27 Z" fill="url(#ilbg)" stroke="#3a3c40" stroke-width="1.5"/>' +
-      // 前置发动机舱（车头宽大部分）：散热格栅面板 + 侧栅
-      '<path d="M56,17 L96,17 Q99,17 99,23 L99,61 Q99,67 96,67 L56,67 L42,42 Z" fill="url(#ileng)" stroke="#3a3c40" stroke-width="1.2"/>' +
-      '<rect x="58" y="20" width="20" height="22" rx="2" fill="#56595f" stroke="#3a3c40" stroke-width="1"/>' +
-      '<line x1="60" y1="24.5" x2="76" y2="24.5" stroke="#3a3c40" stroke-width="1"/>' +
-      '<line x1="60" y1="29" x2="76" y2="29" stroke="#3a3c40" stroke-width="1"/>' +
-      '<line x1="60" y1="33.5" x2="76" y2="33.5" stroke="#3a3c40" stroke-width="1"/>' +
-      '<line x1="60" y1="38" x2="76" y2="38" stroke="#3a3c40" stroke-width="1"/>' +
-      '<rect x="82" y="19" width="14" height="46" rx="2" fill="#56595f" stroke="#3a3c40" stroke-width="1"/>' +
-      '<line x1="85" y1="21" x2="85" y2="63" stroke="#3a3c40" stroke-width="1"/>' +
-      '<line x1="89" y1="21" x2="89" y2="63" stroke="#3a3c40" stroke-width="1"/>' +
-      '<line x1="93" y1="21" x2="93" y2="63" stroke="#3a3c40" stroke-width="1"/>' +
-      // 后部（左）乘员舱门（窄段）
-      '<rect x="22" y="22" width="8" height="40" rx="2" fill="#6a6d72" stroke="#3a3c40" stroke-width="1"/>' +
-      '<line x1="24" y1="30" x2="28" y2="30" stroke="#3a3c40" stroke-width="0.8"/>' +
-      '<line x1="24" y1="42" x2="28" y2="42" stroke="#3a3c40" stroke-width="0.8"/>' +
-      '<line x1="24" y1="54" x2="28" y2="54" stroke="#3a3c40" stroke-width="0.8"/>' +
+      '<rect x="4" y="17" width="92" height="3" fill="#45474c"/>' +
+      '<rect x="4" y="64" width="92" height="3" fill="#45474c"/>' +
+      // 车体主体：前宽后窄梯形（梅卡瓦标志：车头宽大、车尾收窄）
+      '<path d="M36,16 L97,16 Q100,16 100,23 L100,61 Q100,68 97,68 L36,68 L18,57 L18,27 Z" fill="url(#ilbg)" stroke="#33353a" stroke-width="1.5"/>' +
+      // 前置发动机舱（车头宽大部分）
+      '<path d="M58,17 L96,17 Q99,17 99,23 L99,61 Q99,67 96,67 L58,67 L44,42 Z" fill="url(#ileng)" stroke="#33353a" stroke-width="1.2"/>' +
+      // 发动机散热格栅（大面板）
+      '<rect x="60" y="19" width="22" height="24" rx="2" fill="#5a5d63" stroke="#33353a" stroke-width="1"/>' +
+      '<line x1="62" y1="23.5" x2="80" y2="23.5" stroke="#33353a" stroke-width="1.1"/>' +
+      '<line x1="62" y1="28" x2="80" y2="28" stroke="#33353a" stroke-width="1.1"/>' +
+      '<line x1="62" y1="32.5" x2="80" y2="32.5" stroke="#33353a" stroke-width="1.1"/>' +
+      '<line x1="62" y1="37" x2="80" y2="37" stroke="#33353a" stroke-width="1.1"/>' +
+      // 发动机侧散热栅
+      '<rect x="84" y="19" width="12" height="46" rx="2" fill="#5a5d63" stroke="#33353a" stroke-width="1"/>' +
+      '<line x1="87" y1="21" x2="87" y2="63" stroke="#33353a" stroke-width="1"/>' +
+      '<line x1="90.5" y1="21" x2="90.5" y2="63" stroke="#33353a" stroke-width="1"/>' +
+      '<line x1="94" y1="21" x2="94" y2="63" stroke="#33353a" stroke-width="1"/>' +
+      // 车头推土铲（梅卡瓦车头 V 形铲板）
+      '<path d="M96,18 L100,42 L96,66 L90,66 L95,42 L90,18 Z" fill="#56595f" stroke="#33353a" stroke-width="1"/>' +
+      // 后部（左）乘员舱门
+      '<rect x="20" y="21" width="9" height="42" rx="2" fill="#6d7076" stroke="#33353a" stroke-width="1"/>' +
+      '<line x1="22" y1="29" x2="27" y2="29" stroke="#33353a" stroke-width="0.8"/>' +
+      '<line x1="22" y1="42" x2="27" y2="42" stroke="#33353a" stroke-width="0.8"/>' +
+      '<line x1="22" y1="55" x2="27" y2="55" stroke="#33353a" stroke-width="0.8"/>' +
       // 深灰斑
-      '<path d="M24,20 L40,20 L37,34 L22,34 Z" fill="#56595f"/>' +
-      '<path d="M20,48 L36,48 L34,62 L18,62 Z" fill="#6a6d72"/>' +
+      '<path d="M26,19 L44,19 L40,33 L24,33 Z" fill="#56595f"/>' +
+      '<path d="M22,48 L38,48 L35,63 L19,63 Z" fill="#6d7076"/>' +
       // 前灯
-      '<circle cx="97.5" cy="23" r="1.8" fill="#ffe9a3"/>' +
-      '<circle cx="97.5" cy="61" r="1.8" fill="#ffe9a3"/>' +
+      '<circle cx="97.5" cy="22" r="1.8" fill="#ffe9a3"/>' +
+      '<circle cx="97.5" cy="62" r="1.8" fill="#ffe9a3"/>' +
       '</svg>',
-    // 以军 梅卡瓦炮塔：灰色窄长形（前窄后宽）、尾舱吊篮网格、分层
+    // 以军 梅卡瓦Mk4炮塔：中性灰、窄长条（前窄后宽）、前部斜装甲板、方形观瞄塔、尾舱吊篮
     ilTurret: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 52">' +
       '<defs><linearGradient id="iltg" x1="0" y1="0" x2="0" y2="1">' +
-      '<stop offset="0" stop-color="#96999e"/><stop offset="1" stop-color="#63666b"/>' +
+      '<stop offset="0" stop-color="#8e9196"/><stop offset="1" stop-color="#5a5d63"/>' +
       '</linearGradient></defs>' +
-      // 第1层：窄长炮塔主体（前窄后宽，梅卡瓦特征）
-      '<path d="M52,17 L47,8 L15,8 L6,17 L6,35 L15,44 L47,44 L52,35 Z" fill="url(#iltg)" stroke="#3a3c40" stroke-width="1.5"/>' +
-      // 第2层：顶部装甲面板
-      '<path d="M48,19 L43,13 L19,13 L12,19 L12,33 L19,39 L43,39 L48,33 Z" fill="#85888e" stroke="#3a3c40" stroke-width="1"/>' +
+      // 第1层：窄长炮塔主体（前窄后宽楔形长条，整体比车体窄得多）
+      '<path d="M52,19 L47,12 L12,12 L6,19 L6,33 L12,40 L47,40 L52,33 Z" fill="url(#iltg)" stroke="#33353a" stroke-width="1.5"/>' +
+      // 第2层：前部倾斜装甲板（Mk4 炮塔前缘斜面，上下对称）
+      '<path d="M52,19 L47,12 L34,12 L43,19 Z" fill="#82858b" stroke="#33353a" stroke-width="1"/>' +
+      '<path d="M52,33 L47,40 L34,40 L43,33 Z" fill="#70737a" stroke="#33353a" stroke-width="1"/>' +
+      // 顶部装甲面板
+      '<path d="M46,19 L41,14 L17,14 L11,19 L11,33 L17,38 L41,38 L46,33 Z" fill="#86898f" stroke="#33353a" stroke-width="1"/>' +
       // 低对比斑
-      '<path d="M42,14 L48,20 L42,26 L36,20 Z" fill="#56595f"/>' +
-      '<path d="M14,26 L22,26 L20,36 L12,34 Z" fill="#6a6d72"/>' +
+      '<path d="M40,14 L46,19 L40,24 L34,19 Z" fill="#5f6268"/>' +
+      '<path d="M14,26 L21,26 L19,36 L12,34 Z" fill="#6d7076"/>' +
       // 第3层：炮盾
-      '<path d="M47,20 L53,26 L47,32 L41,26 Z" fill="#56595f" stroke="#3a3c40" stroke-width="1"/>' +
-      // 第4层：舱盖 + 观瞄
-      '<circle cx="32" cy="26" r="5.4" fill="#56595f" stroke="#3a3c40" stroke-width="1"/>' +
-      '<circle cx="32" cy="26" r="3.8" fill="#85888e" stroke="#3a3c40" stroke-width="1"/>' +
-      '<circle cx="32" cy="26" r="1.5" fill="#3a3c40"/>' +
-      '<rect x="36" y="13" width="6" height="3.4" rx="1" fill="#26272a" stroke="#3a3c40" stroke-width="0.7"/>' +
-      '<rect x="37" y="13.8" width="4" height="1.8" rx="0.6" fill="#96999e"/>' +
-      // 第5层：尾舱吊篮（炮塔后部储物篮网格——梅卡瓦特色）
-      '<rect x="7" y="18" width="6" height="16" rx="1.5" fill="none" stroke="#56595f" stroke-width="1.3"/>' +
-      '<line x1="10" y1="18" x2="10" y2="34" stroke="#56595f" stroke-width="0.8"/>' +
-      '<line x1="8" y1="22" x2="12" y2="22" stroke="#56595f" stroke-width="0.8"/>' +
-      '<line x1="8" y1="26" x2="12" y2="26" stroke="#56595f" stroke-width="0.8"/>' +
-      '<line x1="8" y1="30" x2="12" y2="30" stroke="#56595f" stroke-width="0.8"/>' +
-      // 设备：天线、周视镜
-      '<circle cx="26" cy="18" r="2" fill="#26272a" stroke="#3a3c40" stroke-width="0.7"/>' +
-      '<circle cx="26" cy="18" r="0.9" fill="#96999e"/>' +
-      '<line x1="16" y1="9" x2="6" y2="2" stroke="#3a3c40" stroke-width="1.1"/>' +
+      '<path d="M46,22 L52,26 L46,30 L41,26 Z" fill="#5f6268" stroke="#33353a" stroke-width="1"/>' +
+      // 第4层：方形观瞄塔（梅卡瓦 Mk4 标志：炮塔顶部方形周视镜塔）
+      '<rect x="21" y="15" width="13" height="13" rx="1.5" fill="#56595f" stroke="#33353a" stroke-width="1"/>' +
+      '<rect x="23" y="17" width="9" height="9" rx="1" fill="#75787e" stroke="#33353a" stroke-width="0.9"/>' +
+      '<circle cx="27.5" cy="21.5" r="2.3" fill="#33353a"/>' +
+      '<circle cx="27.5" cy="21.5" r="1" fill="#c7c9cd"/>' +
+      // 装填手舱盖
+      '<circle cx="16" cy="21" r="3.6" fill="#5f6268" stroke="#33353a" stroke-width="1"/>' +
+      '<circle cx="16" cy="21" r="2.6" fill="#86898f" stroke="#33353a" stroke-width="0.9"/>' +
+      '<circle cx="16" cy="21" r="1" fill="#33353a"/>' +
+      // 第5层：尾舱吊篮（网格储物篮）
+      '<rect x="6" y="15" width="5.5" height="22" rx="1" fill="none" stroke="#5f6268" stroke-width="1.4"/>' +
+      '<line x1="8.75" y1="15" x2="8.75" y2="37" stroke="#5f6268" stroke-width="0.9"/>' +
+      '<line x1="7" y1="19.5" x2="10.5" y2="19.5" stroke="#5f6268" stroke-width="0.9"/>' +
+      '<line x1="7" y1="24" x2="10.5" y2="24" stroke="#5f6268" stroke-width="0.9"/>' +
+      '<line x1="7" y1="28.5" x2="10.5" y2="28.5" stroke="#5f6268" stroke-width="0.9"/>' +
+      '<line x1="7" y1="33" x2="10.5" y2="33" stroke="#5f6268" stroke-width="0.9"/>' +
+      // 设备：天线、观瞄
+      '<line x1="16" y1="12" x2="5" y2="2" stroke="#33353a" stroke-width="1.1"/>' +
+      '<circle cx="38" cy="14" r="1.6" fill="#26272a" stroke="#33353a" stroke-width="0.6"/>' +
+      '<circle cx="38" cy="14" r="0.7" fill="#8e9196"/>' +
       '</svg>',
     // 中国 99B车体：沙色 + 彩色格子数码迷彩（99式沙漠数码涂装）+ 前楔车头 + 车尾侧面格栅装甲
     cnBody: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 84">' +
@@ -1444,31 +1455,31 @@
       '<rect x="5" y="63.5" width="90" height="3.5" fill="#7a6a42"/>' +
       // 车体主体
       '<path d="M18,19 L96,19 Q100,19 100,25 L100,59 Q100,65 96,65 L18,65 L10,56 L10,28 Z" fill="url(#cnbg)" stroke="#5c4f31" stroke-width="1.5"/>' +
-      // 数码迷彩格子（沙色底上深棕/黑/橄榄小方格阵列）
+      // 彩色数码迷彩（99式沙漠数码：浅沙/沙/棕/深棕/棕黑 5 色小格，非绿色系）
       '<rect x="24" y="21" width="8" height="8" fill="#6b5a3a"/>' +
-      '<rect x="33" y="21" width="8" height="8" fill="#8a7748"/>' +
+      '<rect x="33" y="21" width="8" height="8" fill="#e0cd9c"/>' +
       '<rect x="42" y="21" width="8" height="8" fill="#463a26"/>' +
-      '<rect x="51" y="21" width="8" height="8" fill="#8a7748"/>' +
-      '<rect x="60" y="21" width="8" height="8" fill="#6b5a3a"/>' +
-      '<rect x="69" y="21" width="8" height="8" fill="#463a26"/>' +
-      '<rect x="24" y="30" width="8" height="8" fill="#463a26"/>' +
-      '<rect x="33" y="30" width="8" height="8" fill="#6b5a3a"/>' +
-      '<rect x="42" y="30" width="8" height="8" fill="#8a7748"/>' +
-      '<rect x="51" y="30" width="8" height="8" fill="#463a26"/>' +
-      '<rect x="60" y="30" width="8" height="8" fill="#8a7748"/>' +
-      '<rect x="69" y="30" width="8" height="8" fill="#6b5a3a"/>' +
-      '<rect x="24" y="46" width="8" height="8" fill="#8a7748"/>' +
-      '<rect x="33" y="46" width="8" height="8" fill="#463a26"/>' +
+      '<rect x="51" y="21" width="8" height="8" fill="#a8915a"/>' +
+      '<rect x="60" y="21" width="8" height="8" fill="#cdb87f"/>' +
+      '<rect x="69" y="21" width="8" height="8" fill="#6b5a3a"/>' +
+      '<rect x="24" y="30" width="8" height="8" fill="#cdb87f"/>' +
+      '<rect x="33" y="30" width="8" height="8" fill="#463a26"/>' +
+      '<rect x="42" y="30" width="8" height="8" fill="#a8915a"/>' +
+      '<rect x="51" y="30" width="8" height="8" fill="#e0cd9c"/>' +
+      '<rect x="60" y="30" width="8" height="8" fill="#6b5a3a"/>' +
+      '<rect x="69" y="30" width="8" height="8" fill="#a8915a"/>' +
+      '<rect x="24" y="46" width="8" height="8" fill="#a8915a"/>' +
+      '<rect x="33" y="46" width="8" height="8" fill="#cdb87f"/>' +
       '<rect x="42" y="46" width="8" height="8" fill="#6b5a3a"/>' +
-      '<rect x="51" y="46" width="8" height="8" fill="#8a7748"/>' +
-      '<rect x="60" y="46" width="8" height="8" fill="#463a26"/>' +
-      '<rect x="69" y="46" width="8" height="8" fill="#8a7748"/>' +
-      '<rect x="24" y="55" width="8" height="8" fill="#6b5a3a"/>' +
-      '<rect x="33" y="55" width="8" height="8" fill="#8a7748"/>' +
-      '<rect x="42" y="55" width="8" height="8" fill="#463a26"/>' +
-      '<rect x="51" y="55" width="8" height="8" fill="#6b5a3a"/>' +
-      '<rect x="60" y="55" width="8" height="8" fill="#8a7748"/>' +
-      '<rect x="69" y="55" width="8" height="8" fill="#463a26"/>' +
+      '<rect x="51" y="46" width="8" height="8" fill="#463a26"/>' +
+      '<rect x="60" y="46" width="8" height="8" fill="#e0cd9c"/>' +
+      '<rect x="69" y="46" width="8" height="8" fill="#cdb87f"/>' +
+      '<rect x="24" y="55" width="8" height="8" fill="#e0cd9c"/>' +
+      '<rect x="33" y="55" width="8" height="8" fill="#6b5a3a"/>' +
+      '<rect x="42" y="55" width="8" height="8" fill="#a8915a"/>' +
+      '<rect x="51" y="55" width="8" height="8" fill="#cdb87f"/>' +
+      '<rect x="60" y="55" width="8" height="8" fill="#463a26"/>' +
+      '<rect x="69" y="55" width="8" height="8" fill="#6b5a3a"/>' +
       // 前部大型楔形首上装甲（99式标志：V形大楔块，俯视车头像箭头；中央圆尖+两侧斜边后掠+楔脊线）
       '<path d="M48,20 L93,27 Q100,35 100,42 Q100,49 93,57 L48,64 L36,42 Z" fill="#b39a5f" stroke="#5c4f31" stroke-width="1"/>' +
       // 楔脊线（座圈中点直指车头尖）
@@ -1501,29 +1512,30 @@
       '<circle cx="97.5" cy="27" r="1.8" fill="#ffe9a3"/>' +
       '<circle cx="97.5" cy="57" r="1.8" fill="#ffe9a3"/>' +
       '</svg>',
-    // 中国 99B炮塔：沙色 + 数码格子迷彩 + 正面爆反块 + 炮塔背面格栅装甲
+    // 中国 99B炮塔：沙色大方箱（前缘近垂直）+ 前部外挂爆反板 + 顶部雷达罩 + 彩色数码格子 + 背面格栅
     cnTurret: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 52">' +
       '<defs><linearGradient id="cntg" x1="0" y1="0" x2="0" y2="1">' +
       '<stop offset="0" stop-color="#c2aa6d"/><stop offset="1" stop-color="#93804f"/>' +
       '</linearGradient></defs>' +
-      // 第1层：方形炮塔主体
-      '<path d="M52,18 L46,8 L13,8 L6,18 L6,34 L13,44 L46,44 L52,34 Z" fill="url(#cntg)" stroke="#5c4f31" stroke-width="1.5"/>' +
+      // 第1层：方形炮塔主体（99式=大方箱，前缘近垂直，非六边形）
+      '<path d="M50,16 L45,9 L14,9 L8,16 L8,36 L14,43 L45,43 L50,36 Z" fill="url(#cntg)" stroke="#5c4f31" stroke-width="1.5"/>' +
       // 第2层：顶部装甲面板
-      '<path d="M48,20 L43,13 L17,13 L11,20 L11,32 L17,39 L43,39 L48,32 Z" fill="#b39a5f" stroke="#5c4f31" stroke-width="1"/>' +
-      // 数码格子迷彩
-      '<rect x="36" y="14" width="7" height="7" fill="#6b5a3a"/>' +
+      '<path d="M46,18 L41,13 L18,13 L12,18 L12,34 L18,39 L41,39 L46,34 Z" fill="#b39a5f" stroke="#5c4f31" stroke-width="1"/>' +
+      // 彩色数码格子（沙/浅沙/棕/深棕/棕黑）
+      '<rect x="36" y="14" width="7" height="7" fill="#e0cd9c"/>' +
       '<rect x="44" y="14" width="6" height="7" fill="#463a26"/>' +
       '<rect x="14" y="22" width="7" height="7" fill="#463a26"/>' +
-      '<rect x="22" y="22" width="7" height="7" fill="#8a7748"/>' +
-      '<rect x="30" y="32" width="7" height="7" fill="#8a7748"/>' +
+      '<rect x="22" y="22" width="7" height="7" fill="#cdb87f"/>' +
+      '<rect x="30" y="32" width="7" height="7" fill="#a8915a"/>' +
       '<rect x="38" y="32" width="7" height="7" fill="#6b5a3a"/>' +
-      // 第3层：正面爆反块
-      '<rect x="41" y="18.5" width="6" height="6" fill="#7a8a52" stroke="#5c4f31" stroke-width="0.9"/>' +
-      '<rect x="41" y="27.5" width="6" height="6" fill="#7a8a52" stroke="#5c4f31" stroke-width="0.9"/>' +
-      '<rect x="34" y="10.5" width="6" height="6" fill="#7a8a52" stroke="#5c4f31" stroke-width="0.9"/>' +
-      '<rect x="36" y="35" width="6" height="6" fill="#7a8a52" stroke="#5c4f31" stroke-width="0.9"/>' +
+      '<rect x="20" y="32" width="7" height="7" fill="#e0cd9c"/>' +
+      // 第3层：前部外挂爆反板（99式炮塔正面两侧的突出爆反板）
+      '<rect x="43.5" y="10.5" width="6.5" height="13" rx="1" fill="#a8915a" stroke="#5c4f31" stroke-width="1"/>' +
+      '<rect x="43.5" y="28.5" width="6.5" height="13" rx="1" fill="#a8915a" stroke="#5c4f31" stroke-width="1"/>' +
+      '<line x1="45" y1="15" x2="48.5" y2="15" stroke="#5c4f31" stroke-width="0.9"/>' +
+      '<line x1="45" y1="33" x2="48.5" y2="33" stroke="#5c4f31" stroke-width="0.9"/>' +
       // 炮盾
-      '<path d="M47,21 L53,26 L47,31 L42,26 Z" fill="#8d7a4b" stroke="#5c4f31" stroke-width="1"/>' +
+      '<path d="M46,22 L52,26 L46,30 L41,26 Z" fill="#8d7a4b" stroke="#5c4f31" stroke-width="1"/>' +
       // 第4层：炮塔背面格栅装甲
       '<rect x="6" y="10" width="6" height="32" rx="1.5" fill="none" stroke="#7a6a42" stroke-width="1.4"/>' +
       '<line x1="9" y1="10" x2="9" y2="42" stroke="#7a6a42" stroke-width="0.8"/>' +
@@ -1533,16 +1545,18 @@
       '<line x1="7" y1="32" x2="11" y2="32" stroke="#7a6a42" stroke-width="0.8"/>' +
       '<line x1="7" y1="38" x2="11" y2="38" stroke="#7a6a42" stroke-width="0.8"/>' +
       // 第5层：双舱盖凸台
-      '<circle cx="29" cy="20" r="5.4" fill="#8d7a4b" stroke="#5c4f31" stroke-width="1"/>' +
-      '<circle cx="29" cy="20" r="4" fill="#c2aa6d" stroke="#5c4f31" stroke-width="1"/>' +
-      '<circle cx="29" cy="20" r="1.5" fill="#5c4f31"/>' +
-      '<circle cx="20" cy="23" r="4" fill="#8d7a4b" stroke="#5c4f31" stroke-width="1"/>' +
-      '<circle cx="20" cy="23" r="2.8" fill="#c2aa6d" stroke="#5c4f31" stroke-width="1"/>' +
-      // 设备
+      '<circle cx="29" cy="19" r="5" fill="#8d7a4b" stroke="#5c4f31" stroke-width="1"/>' +
+      '<circle cx="29" cy="19" r="3.7" fill="#c2aa6d" stroke="#5c4f31" stroke-width="1"/>' +
+      '<circle cx="29" cy="19" r="1.4" fill="#5c4f31"/>' +
+      '<circle cx="19" cy="22" r="3.8" fill="#8d7a4b" stroke="#5c4f31" stroke-width="1"/>' +
+      '<circle cx="19" cy="22" r="2.7" fill="#c2aa6d" stroke="#5c4f31" stroke-width="1"/>' +
+      // 第6层：顶部毫米波雷达罩（99A 标志：炮塔顶部偏后圆形雷达罩）
+      '<circle cx="33" cy="31" r="4.4" fill="#3a3220" stroke="#5c4f31" stroke-width="1"/>' +
+      '<circle cx="33" cy="31" r="3.2" fill="#5c4f31" stroke="#5c4f31" stroke-width="0.8"/>' +
+      '<circle cx="33" cy="31" r="1.4" fill="#e0cd9c"/>' +
+      // 设备：观瞄镜、天线
       '<rect x="35" y="10.5" width="6" height="3.4" rx="1" fill="#3a3220" stroke="#5c4f31" stroke-width="0.7"/>' +
       '<rect x="36" y="11.3" width="4" height="1.8" rx="0.6" fill="#e0cd9c"/>' +
-      '<circle cx="32" cy="29" r="2.4" fill="#3a3220" stroke="#5c4f31" stroke-width="0.8"/>' +
-      '<circle cx="32" cy="29" r="1" fill="#e0cd9c"/>' +
       '<line x1="15" y1="9" x2="5" y2="2" stroke="#5c4f31" stroke-width="1.1"/>' +
       '</svg>',
     // 欧盟 豹二A6车体：黑灰涂装 + 前楔车头
@@ -1567,12 +1581,25 @@
       '<path d="M62,48 L80,48 L78,60 L60,60 Z" fill="#222428"/>' +
       // 前部楔形车头
       '<path d="M58,21 L96,21 Q99,21 99,25 L99,59 Q99,63 96,63 L58,63 L44,42 Z" fill="#414449" stroke="#18191c" stroke-width="1"/>' +
-      // 尾部格栅
-      '<rect x="12" y="25" width="9" height="34" rx="2" fill="#2b2d31" stroke="#18191c" stroke-width="0.9"/>' +
-      '<line x1="12" y1="31.5" x2="21" y2="31.5" stroke="#18191c" stroke-width="0.9"/>' +
-      '<line x1="12" y1="38" x2="21" y2="38" stroke="#18191c" stroke-width="0.9"/>' +
-      '<line x1="12" y1="44.5" x2="21" y2="44.5" stroke="#18191c" stroke-width="0.9"/>' +
-      '<line x1="12" y1="51" x2="21" y2="51" stroke="#18191c" stroke-width="0.9"/>' +
+      // 尾部储物篮（豹2 标志：车体尾部两侧网格储物篮）
+      '<rect x="10" y="20" width="8" height="19" rx="1.5" fill="none" stroke="#4a4d52" stroke-width="1.3"/>' +
+      '<line x1="14" y1="20" x2="14" y2="39" stroke="#4a4d52" stroke-width="0.8"/>' +
+      '<line x1="11" y1="23.8" x2="17" y2="23.8" stroke="#4a4d52" stroke-width="0.8"/>' +
+      '<line x1="11" y1="27.6" x2="17" y2="27.6" stroke="#4a4d52" stroke-width="0.8"/>' +
+      '<line x1="11" y1="31.4" x2="17" y2="31.4" stroke="#4a4d52" stroke-width="0.8"/>' +
+      '<line x1="11" y1="35.2" x2="17" y2="35.2" stroke="#4a4d52" stroke-width="0.8"/>' +
+      '<rect x="10" y="45" width="8" height="19" rx="1.5" fill="none" stroke="#4a4d52" stroke-width="1.3"/>' +
+      '<line x1="14" y1="45" x2="14" y2="64" stroke="#4a4d52" stroke-width="0.8"/>' +
+      '<line x1="11" y1="48.8" x2="17" y2="48.8" stroke="#4a4d52" stroke-width="0.8"/>' +
+      '<line x1="11" y1="52.6" x2="17" y2="52.6" stroke="#4a4d52" stroke-width="0.8"/>' +
+      '<line x1="11" y1="56.4" x2="17" y2="56.4" stroke="#4a4d52" stroke-width="0.8"/>' +
+      '<line x1="11" y1="60.2" x2="17" y2="60.2" stroke="#4a4d52" stroke-width="0.8"/>' +
+      // 尾部发动机格栅
+      '<rect x="21" y="26" width="8" height="32" rx="2" fill="#2b2d31" stroke="#18191c" stroke-width="0.9"/>' +
+      '<line x1="21" y1="32" x2="29" y2="32" stroke="#18191c" stroke-width="0.9"/>' +
+      '<line x1="21" y1="38" x2="29" y2="38" stroke="#18191c" stroke-width="0.9"/>' +
+      '<line x1="21" y1="44" x2="29" y2="44" stroke="#18191c" stroke-width="0.9"/>' +
+      '<line x1="21" y1="50" x2="29" y2="50" stroke="#18191c" stroke-width="0.9"/>' +
       // 前灯
       '<circle cx="97.5" cy="27" r="1.8" fill="#ffe9a3"/>' +
       '<circle cx="97.5" cy="57" r="1.8" fill="#ffe9a3"/>' +
@@ -1602,7 +1629,9 @@
       '<circle cx="21" cy="24" r="3" fill="#45484d" stroke="#18191c" stroke-width="1"/>' +
       '<rect x="35" y="12" width="6" height="3.4" rx="1" fill="#17181a" stroke="#18191c" stroke-width="0.7"/>' +
       '<rect x="36" y="12.8" width="4" height="1.8" rx="0.6" fill="#6a6e74"/>' +
-      // 第5层：设备
+      // 第5层：设备（车长周视镜、炮手观瞄、天线、尾部储物箱）
+      '<circle cx="39" cy="17.5" r="2.5" fill="#17181a" stroke="#18191c" stroke-width="0.8"/>' +
+      '<circle cx="39" cy="17.5" r="1.2" fill="#6a6e74"/>' +
       '<circle cx="27" cy="17" r="2" fill="#17181a" stroke="#18191c" stroke-width="0.7"/>' +
       '<circle cx="27" cy="17" r="0.9" fill="#6a6e74"/>' +
       '<line x1="15" y1="10" x2="5" y2="3" stroke="#18191c" stroke-width="1.1"/>' +
@@ -2404,7 +2433,7 @@
       if (!src || src.x == null || !src.alive) { p.render = null; continue; }
       seen.add(p.id);
       if (p.id === myId && selfPos) {
-        p.render = { x: selfPos.x, y: selfPos.y, a: selfPos.a, ta: autoTurret ? selfPos.a : mouseAngle, hp: selfHp, shd: selfBuffs.shd, ty: selfType, prt: [selfParts.track, selfParts.turret, selfParts.engine, selfParts.ammo, selfParts.optics, selfParts.loader], fr: selfFire, am: selfAmFire ? 1 : 0, mt: selfMortar, ag: selfAg, jm: selfJm ? 1 : 0 };
+        p.render = { x: selfPos.x, y: selfPos.y, a: selfPos.a, ta: autoTurret ? selfPos.a : mouseAngle, hp: selfHp, shd: selfBuffs.shd, ty: selfType, prt: [selfParts.track, selfParts.turret, selfParts.engine, selfParts.ammo, selfParts.optics, selfParts.loader], fr: selfFire, am: selfAmFire ? 1 : 0, mc: selfMortar, ag: selfAg, jm: selfJm ? 1 : 0 };
       } else {
         const from = pa || src;
         const to = pb || src;
@@ -2420,7 +2449,7 @@
           fr: to.fr || 0,
           am: to.am || 0,
           ty: to.ty || 'us',
-          mt: to.mt || 0,
+          mc: to.mc || 0,
           ag: to.ag || 0,
           jm: to.jm || 0,
         };
