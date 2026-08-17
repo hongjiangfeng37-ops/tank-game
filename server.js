@@ -79,11 +79,11 @@ const TANK_TYPES = {
     hasLoader: true,    // 自动装弹机：损坏后装填时间翻倍
   },
   jp: {
-    name: '日军 90式主战坦克', maxSpeed: 245, back: 0.6, reload: 3,
+    name: '日军 90式主战坦克', maxSpeed: 280, back: 0.6, reload: 3,
     era: 200,                                       // 爆反血量（用户指定 200）
     armor: { front: 550, side: 150, back: 250 },    // 基础装甲
     armorEra: { front: 800, side: 400, back: 500 }, // 爆反生效时（每部位 +250）
-    pen: 500, penGain: 100, penBounceMax: 9,        // 特殊：每次反弹穿深 +100，最高反弹 9 次后消失
+    pen: 500, penGain: 200, penBounceMax: 9,        // 特殊：每次反弹穿深 +200，最高反弹 9 次后消失
     ammoZone: 'rear',   // 尾舱弹药架：直接殉爆（同美军）
     frontAmmoFire: true, // 前置弹药架：爆反不满血时正面击穿 50% 弹药架起火
     hasLoader: false,
@@ -276,7 +276,7 @@ function genCode() {
 }
 
 function roster(room) {
-  return [...room.players.values()].map((p) => ({ id: p.id, name: p.name, alive: p.alive, host: p.id === room.hostId, type: p.type }));
+  return [...room.players.values()].map((p) => ({ id: p.id, name: p.name, alive: p.alive, host: p.id === room.hostId, type: p.type, bot: !!p.isBot }));
 }
 function scores(room) {
   return [...room.players.values()].map((p) => ({ id: p.id, name: p.name, kills: p.kills, wins: p.wins, alive: p.alive }));
@@ -1596,6 +1596,22 @@ function onMessage(conn, buf) {
         }
         broadcastRoom(p.room);
       }
+      break;
+    }
+    case 'kick': {
+      // 房主踢人：立即移除（不进入 15 秒断线保留），被踢玩家收到 kick 消息
+      if (!p || !p.room) break;
+      const room2 = p.room;
+      if (p.id !== room2.hostId) break; // 只有房主能踢
+      const victim = room2.players.get(String(msg.id));
+      if (!victim || victim.isBot || victim.id === p.id) break;
+      clearTimeout(victim.removeTimer);
+      if (victim.conn) {
+        send(victim.conn, { t: 'kick' });
+        victim.conn.player = null; // 防止 close 处理走 15 秒断线保留
+        victim.conn.die();
+      }
+      removePlayer(room2, victim);
       break;
     }
     case 'list': {
