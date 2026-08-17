@@ -90,7 +90,7 @@
     topbar: $('topbar'), codeText: $('codeText'), btnCopy: $('btnCopy'),
     pingText: $('pingText'), btnMute: $('btnMute'), btnLeave: $('btnLeave'), btnPub: $('btnPub'),
     countdown: $('countdown'), banner: $('banner'), killfeed: $('killfeed'),
-    hud: $('hud'), hpBar: $('hpBar'), hpText: $('hpText'), ammoBox: $('ammoBox'), eraBox: $('eraBox'), buffs: $('buffs'),
+    hud: $('hud'), hpBar: $('hpBar'), hpText: $('hpText'), ammoBox: $('ammoBox'), eraBox: $('eraBox'), buffs: $('buffs'), wepBox: $('wepBox'), wepText: $('wepText'), wepBar: $('wepBar'),
     tpUs: $('tp-us'), tpRu: $('tp-ru'), tpJp: $('tp-jp'), tpIl: $('tp-il'), tpCn: $('tp-cn'), tpDe: $('tp-de'),
     partTrack: $('part-track'), partTurret: $('part-turret'), partEngine: $('part-engine'),
     partAmmo: $('part-ammo'), partOptics: $('part-optics'),
@@ -994,30 +994,6 @@
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
     drawFog();
-    // 梅卡瓦炮管模式指示 + 迫击炮冷却条（常显，明确操作反馈）
-    if (selfType === 'il' && selfAlive && phase === 'play') {
-      const bw = 210, bh = 10;
-      const bx = canvas.clientWidth / 2 - bw / 2, by = canvas.clientHeight - 66;
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      rr(bx - 3, by - 3, bw + 6, bh + 6, 6); ctx.fill();
-      // 冷却条：迫击炮模式下显示 30s 冷却倒计时（红）或就绪（绿满）
-      if (mortarMode) {
-        const cdFrac = Math.max(0, Math.min(1, 1 - selfMortar / 30));
-        ctx.fillStyle = selfJm ? '#ff5d5d' : (selfMortar <= 0 ? '#66bb6a' : '#ff5252');
-        rr(bx, by, bw * cdFrac, bh, 4); ctx.fill();
-      }
-      ctx.fillStyle = '#fff';
-      ctx.font = '12px sans-serif';
-      ctx.textAlign = 'center';
-      let mText;
-      if (mortarMode) {
-        mText = selfJm ? '📡 被窗帘干扰！无法发射' :
-          (selfMortar > 0 ? '💣 迫击炮冷却 ' + Math.ceil(selfMortar) + 's' : '✅ 迫击炮就绪，开火！');
-      } else {
-        mText = '🔫 主炮模式（按 2 切换迫击炮）' + (selfMortar > 0 ? '　💣 冷却 ' + Math.ceil(selfMortar) + 's' : '　💣 就绪');
-      }
-      ctx.fillText(mText, canvas.clientWidth / 2, by - 7);
-    }
     // 手机端按钮显隐（梅卡瓦切炮键 / 导弹键 / 99B APS 键）
     if (touch.mode) {
       const mb = document.getElementById('btnMortarMode');
@@ -1028,27 +1004,6 @@
       if (pb) {
         pb.classList.toggle('show', selfType === 'cn');
         pb.classList.toggle('on', selfApsOn > 0);
-      }
-    }
-    // 99B 主动防御 HUD 状态（含激活/冷却进度条）
-    if (selfType === 'cn' && selfAlive && phase === 'play') {
-      const sby = canvas.clientHeight - 88;
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      rr(canvas.clientWidth / 2 - 95, sby - 3, 190, 24, 8); ctx.fill();
-      ctx.font = '12px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillStyle = selfApsOn > 0 ? '#4dd0e1' : (selfApsCd > 0 ? '#ff8a80' : '#fff');
-      const txt = selfApsOn > 0 ? ('🛡️ 主动防御激活 ' + selfApsOn + 's') :
-        (selfApsCd > 0 ? ('🛡️ 冷却中 ' + selfApsCd + 's') :
-          ('🛡️ 主动防御 x' + selfApsN + '（按 E 开启）'));
-      ctx.fillText(txt, canvas.clientWidth / 2, sby + 10);
-      // 进度条：激活 10s 递减 / 大冷却 60s 递减
-      const rem = selfApsOn > 0 ? selfApsOn : selfApsCd;
-      if (rem > 0) {
-        const max = selfApsOn > 0 ? 10 : 60;
-        const frac = Math.max(0, Math.min(1, rem / max));
-        ctx.fillStyle = selfApsOn > 0 ? '#4dd0e1' : '#ff8a80';
-        rr(canvas.clientWidth / 2 - 92, sby + 14, 184 * frac, 5, 2.5); ctx.fill();
       }
     }
   }
@@ -1925,6 +1880,40 @@
     } else {
       els.eraBox.textContent = '🛡️ 爆反耗尽';
       els.eraBox.classList.add('no-era');
+    }
+    // 特殊武器状态（并入玩家 HUD，不遮挡战场）：梅卡瓦迫击炮 / 99B 主动防御
+    if (selfType === 'il') {
+      els.wepBox.classList.remove('hidden');
+      const ready = selfMortar <= 0;
+      const cdPct = Math.round((1 - selfMortar / 30) * 100);
+      if (mortarMode) {
+        els.wepText.textContent = ready ? '💣 迫击炮就绪，开火！' : '💣 迫击炮冷却 ' + Math.ceil(selfMortar) + 's';
+      } else {
+        els.wepText.textContent = ready ? '💣 迫击炮就绪（按 2 切换）' : '💣 迫击炮冷却 ' + Math.ceil(selfMortar) + 's（按 2 切换）';
+      }
+      els.wepBar.firstChild.style.width = (ready ? 100 : cdPct) + '%';
+      els.wepBar.firstChild.style.background = ready ? '#66bb6a' : '#ff5252';
+      els.wepBox.style.borderColor = ready ? '#66bb6a' : '#ff5252';
+    } else if (selfType === 'cn') {
+      els.wepBox.classList.remove('hidden');
+      if (selfApsOn > 0) {
+        els.wepText.textContent = '🛡️ 主动防御激活 ' + selfApsOn + 's';
+        els.wepBar.firstChild.style.width = Math.round(selfApsOn / 10 * 100) + '%';
+        els.wepBar.firstChild.style.background = '#4dd0e1';
+        els.wepBox.style.borderColor = '#4dd0e1';
+      } else if (selfApsCd > 0) {
+        els.wepText.textContent = '🛡️ 主动防御冷却 ' + selfApsCd + 's';
+        els.wepBar.firstChild.style.width = Math.round((1 - selfApsCd / 60) * 100) + '%';
+        els.wepBar.firstChild.style.background = '#ff8a80';
+        els.wepBox.style.borderColor = '#ff8a80';
+      } else {
+        els.wepText.textContent = '🛡️ 主动防御 x' + selfApsN + '（按 E 开启）';
+        els.wepBar.firstChild.style.width = (selfApsN > 0 ? 100 : 0) + '%';
+        els.wepBar.firstChild.style.background = '#fff';
+        els.wepBox.style.borderColor = '#2a3a5c';
+      }
+    } else {
+      els.wepBox.classList.add('hidden');
     }
     els.buffs.innerHTML = '';
     if (selfBuffs.shd) addBuff('护盾', 'b-shield', selfBuffs.shd);
