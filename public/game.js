@@ -172,6 +172,7 @@
   let selfAg = 0;               // 反坦克导弹持有数
   let selfJm = 0;               // 自己被窗帘干扰
   let selfShtoraCd = 0;         // T90A 干扰冷却剩余（20s 满=可用）
+  let localHjSide = 0;          // 红箭10 左右发射架交替标记
   let mortarMode = false;       // 梅卡瓦当前火炮模式：false=主炮 true=迫击炮
   let selfApsN = 0;             // 99B 主动防御充能
   let selfApsOn = 0;            // 主动防御激活剩余秒
@@ -1624,72 +1625,74 @@
       '<line x1="15" y1="10" x2="5" y2="3" stroke="#18191c" stroke-width="1.1"/>' +
       '<rect x="7" y="30" width="5.5" height="7" rx="1" fill="#2e3034" stroke="#18191c" stroke-width="0.8"/>' +
       '</svg>',
-    // 中国 红箭10导弹发射车车体：轮式装甲车底盘（6 轮，无履带无坦克特征），后部发射架平台，前部驾驶舱
+    // 中国 红箭10导弹发射车车体：履带式底盘（真实型号），扁平箱式车身无炮塔座圈，后部发射架平台，前部驾驶舱
     hj10Body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 84">' +
       '<defs><linearGradient id="hjb" x1="0" y1="0" x2="0" y2="1">' +
       '<stop offset="0" stop-color="#5a6846"/><stop offset="0.5" stop-color="#475434"/><stop offset="1" stop-color="#36402a"/>' +
       '</linearGradient></defs>' +
-      // 轮式底盘：左右各 3 个负重轮（深色圆轮 + 亮轮毂，轮式装甲车标志）
-      '<circle cx="20" cy="11" r="7" fill="#14170f" stroke="#0a0c06" stroke-width="1.2"/>' +
-      '<circle cx="20" cy="11" r="3.2" fill="#4a5242"/>' +
-      '<circle cx="50" cy="11" r="7" fill="#14170f" stroke="#0a0c06" stroke-width="1.2"/>' +
-      '<circle cx="50" cy="11" r="3.2" fill="#4a5242"/>' +
-      '<circle cx="80" cy="11" r="7" fill="#14170f" stroke="#0a0c06" stroke-width="1.2"/>' +
-      '<circle cx="80" cy="11" r="3.2" fill="#4a5242"/>' +
-      '<circle cx="20" cy="73" r="7" fill="#14170f" stroke="#0a0c06" stroke-width="1.2"/>' +
-      '<circle cx="20" cy="73" r="3.2" fill="#4a5242"/>' +
-      '<circle cx="50" cy="73" r="7" fill="#14170f" stroke="#0a0c06" stroke-width="1.2"/>' +
-      '<circle cx="50" cy="73" r="3.2" fill="#4a5242"/>' +
-      '<circle cx="80" cy="73" r="7" fill="#14170f" stroke="#0a0c06" stroke-width="1.2"/>' +
-      '<circle cx="80" cy="73" r="3.2" fill="#4a5242"/>' +
-      // 轮间空隙（底盘下缘）
-      '<rect x="12" y="16" width="76" height="4" fill="#1c2216"/>' +
-      '<rect x="12" y="64" width="76" height="4" fill="#1c2216"/>' +
-      // 车体主体（扁平箱式装甲车，前后同宽，无坦克的楔形/裙板结构）
-      '<path d="M10,20 L96,20 Q100,20 100,26 L100,58 Q100,64 96,64 L10,64 L4,56 L4,28 Z" fill="url(#hjb)" stroke="#20271a" stroke-width="1.5"/>' +
+      // 履带 + 履带齿（履带式底盘）
+      '<rect x="3" y="3" width="94" height="13" rx="6" fill="#14170f"/>' +
+      '<rect x="3" y="68" width="94" height="13" rx="6" fill="#14170f"/>' +
+      '<line x1="8" y1="9.5" x2="97" y2="9.5" stroke="#0a0c06" stroke-width="4" stroke-dasharray="2.6 4.4"/>' +
+      '<line x1="8" y1="74.5" x2="97" y2="74.5" stroke="#0a0c06" stroke-width="4" stroke-dasharray="2.6 4.4"/>' +
+      // 侧裙板上缘
+      '<rect x="5" y="17" width="90" height="3.5" fill="#2a3026"/>' +
+      '<rect x="5" y="63.5" width="90" height="3.5" fill="#2a3026"/>' +
+      // 车体主体（扁平箱式：导弹发射车，比主战坦克低矮方正，前后同宽）
+      '<path d="M14,19 L96,19 Q100,19 100,25 L100,59 Q100,65 96,65 L14,65 L7,56 L7,28 Z" fill="url(#hjb)" stroke="#20271a" stroke-width="1.5"/>' +
       // 军绿迷彩斑（黑 + 沙）
-      '<path d="M40,22 L60,22 L56,34 L36,34 Z" fill="#2c3324"/>' +
-      '<path d="M70,21 L90,21 L86,31 L68,31 Z" fill="#6b5a3a"/>' +
-      '<path d="M20,46 L40,46 L37,60 L17,60 Z" fill="#6b5a3a"/>' +
-      '<path d="M60,46 L80,46 L76,60 L56,60 Z" fill="#2c3324"/>' +
-      // 后部发射架安装平台（左端凹台，发射架在此升降旋转）
-      '<path d="M10,22 L46,22 L40,62 L10,62 L5,54 L5,30 Z" fill="#3d4a34" stroke="#20271a" stroke-width="1"/>' +
-      '<line x1="7" y1="27" x2="44" y2="27" stroke="#20271a" stroke-width="0.8" opacity="0.5"/>' +
-      '<line x1="7" y1="57" x2="44" y2="57" stroke="#20271a" stroke-width="0.8" opacity="0.5"/>' +
-      // 前部（右）驾驶舱（装甲车特征：斜挡风玻璃）
-      '<path d="M74,21 L95,21 Q99,21 99,26 L99,58 Q99,63 95,63 L74,63 L66,42 Z" fill="#4c5a3c" stroke="#20271a" stroke-width="1"/>' +
-      '<rect x="78" y="23" width="16" height="8" rx="1.5" fill="#1c2216" stroke="#20271a" stroke-width="0.9"/>' +
-      '<line x1="80" y1="26" x2="92" y2="26" stroke="#5a6846" stroke-width="1"/>' +
-      '<line x1="80" y1="28.5" x2="92" y2="28.5" stroke="#5a6846" stroke-width="1"/>' +
+      '<path d="M40,21 L58,21 L54,32 L36,32 Z" fill="#2c3324"/>' +
+      '<path d="M70,20 L88,20 L84,30 L68,30 Z" fill="#6b5a3a"/>' +
+      '<path d="M22,44 L40,44 L37,58 L19,58 Z" fill="#6b5a3a"/>' +
+      '<path d="M62,44 L80,44 L76,58 L58,58 Z" fill="#2c3324"/>' +
+      // 后部发射架安装平台（左端凹槽：发射架在此升降旋转，无炮塔座圈）
+      '<path d="M14,21 L44,21 L38,63 L14,63 L8,55 L8,29 Z" fill="#3d4a34" stroke="#20271a" stroke-width="1"/>' +
+      '<line x1="10" y1="26" x2="42" y2="26" stroke="#20271a" stroke-width="0.8" opacity="0.5"/>' +
+      '<line x1="10" y1="58" x2="42" y2="58" stroke="#20271a" stroke-width="0.8" opacity="0.5"/>' +
+      // 前部（右）驾驶舱（装甲车：斜挡风玻璃 + 舱门）
+      '<path d="M76,21 L95,21 Q99,21 99,26 L99,58 Q99,63 95,63 L76,63 L68,42 Z" fill="#4c5a3c" stroke="#20271a" stroke-width="1"/>' +
+      '<rect x="79" y="23" width="15" height="7" rx="1.5" fill="#1c2216" stroke="#20271a" stroke-width="0.9"/>' +
+      '<line x1="81" y1="25.5" x2="92" y2="25.5" stroke="#5a6846" stroke-width="1"/>' +
+      '<line x1="81" y1="28" x2="92" y2="28" stroke="#5a6846" stroke-width="1"/>' +
       // 前灯
       '<circle cx="97.5" cy="27" r="1.8" fill="#ffe9a3"/>' +
       '<circle cx="97.5" cy="57" r="1.8" fill="#ffe9a3"/>' +
       '</svg>',
-    // 中国 红箭10发射架（无炮塔）：短小方底座（车体后部安装位）+ 左右两根方形发射箱朝车头伸出 + 液压支杆
+    // 中国 红箭10发射架（独立设计，非炮塔）：左右两根方形导弹发射箱（厚实方箱，箱口方形面）+ 中间观瞄 + 底座
     hj10Turret: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 52">' +
       '<defs><linearGradient id="hjt" x1="0" y1="0" x2="0" y2="1">' +
       '<stop offset="0" stop-color="#4c5a3c"/><stop offset="1" stop-color="#2f3a26"/>' +
+      '</linearGradient>' +
+      // 发射箱渐变（箱体立体感）
+      '<linearGradient id="hjbox" x1="0" y1="0" x2="1" y2="0">' +
+      '<stop offset="0" stop-color="#55663e"/><stop offset="1" stop-color="#39452b"/>' +
       '</linearGradient></defs>' +
-      // 第1层：短小方底座（发射架基座，无炮塔轮廓）
-      '<path d="M28,14 L22,9 L9,9 L4,15 L4,37 L9,43 L22,43 L28,38 Z" fill="url(#hjt)" stroke="#20271a" stroke-width="1.5"/>' +
-      // 第2层：底座顶板
-      '<path d="M25,16 L21,12 L11,12 L7,16 L7,36 L11,40 L21,40 L25,36 Z" fill="#42502f" stroke="#20271a" stroke-width="1"/>' +
-      // 第3层：左右两根方形发射箱（朝车头伸出，箱式导弹发射器）
-      '<rect x="26" y="14" width="20" height="10" rx="1.5" fill="#3d4a34" stroke="#20271a" stroke-width="1.2"/>' +
-      '<rect x="26" y="28" width="20" height="10" rx="1.5" fill="#3d4a34" stroke="#20271a" stroke-width="1.2"/>' +
-      // 发射箱口（深色圆孔）
-      '<ellipse cx="46" cy="19" rx="1.8" ry="3.6" fill="#14170f"/>' +
-      '<ellipse cx="46" cy="33" rx="1.8" ry="3.6" fill="#14170f"/>' +
-      // 发射箱加强箍
-      '<line x1="33" y1="14" x2="33" y2="24" stroke="#20271a" stroke-width="0.9"/>' +
-      '<line x1="33" y1="28" x2="33" y2="38" stroke="#20271a" stroke-width="0.9"/>' +
-      // 液压升降支杆（底座两侧斜撑）
-      '<line x1="8" y1="16" x2="13" y2="23" stroke="#20271a" stroke-width="1.4"/>' +
-      '<line x1="8" y1="36" x2="13" y2="29" stroke="#20271a" stroke-width="1.4"/>' +
-      // 底座设备：观瞄镜、天线
-      '<rect x="16" y="13" width="5" height="3.2" rx="0.8" fill="#1c2415" stroke="#20271a" stroke-width="0.7"/>' +
-      '<rect x="17" y="13.8" width="3" height="1.6" rx="0.6" fill="#5a6e45"/>' +
-      '<line x1="10" y1="10" x2="3" y2="3" stroke="#20271a" stroke-width="1.1"/>' +
+      // 第1层：底座（贴图左半，发射架旋转基座，矮小）
+      '<path d="M24,13 L20,9 L8,9 L4,15 L4,37 L8,43 L20,43 L24,39 Z" fill="url(#hjt)" stroke="#20271a" stroke-width="1.2"/>' +
+      '<line x1="6" y1="18" x2="22" y2="18" stroke="#20271a" stroke-width="0.7" opacity="0.5"/>' +
+      '<line x1="6" y1="34" x2="22" y2="34" stroke="#20271a" stroke-width="0.7" opacity="0.5"/>' +
+      // 第2层：上方发射箱（方形箱体：厚、方角、箱盖铰链、方形发射口）
+      '<rect x="22" y="10" width="27" height="13" rx="1" fill="url(#hjbox)" stroke="#20271a" stroke-width="1.2"/>' +
+      // 箱盖铰链线（箱体中部横线——箱体特征，绝非炮管）
+      '<line x1="22" y1="16.5" x2="49" y2="16.5" stroke="#20271a" stroke-width="0.9"/>' +
+      // 方形发射口（箱口方形面，深色）
+      '<rect x="45" y="11.5" width="4" height="10" fill="#14170f"/>' +
+      // 箱体加强条
+      '<line x1="31" y1="10" x2="31" y2="23" stroke="#20271a" stroke-width="0.8"/>' +
+      '<line x1="39" y1="10" x2="39" y2="23" stroke="#20271a" stroke-width="0.8"/>' +
+      // 第3层：下方发射箱（同样方形箱体）
+      '<rect x="22" y="29" width="27" height="13" rx="1" fill="url(#hjbox)" stroke="#20271a" stroke-width="1.2"/>' +
+      '<line x1="22" y1="35.5" x2="49" y2="35.5" stroke="#20271a" stroke-width="0.9"/>' +
+      '<rect x="45" y="30.5" width="4" height="10" fill="#14170f"/>' +
+      '<line x1="31" y1="29" x2="31" y2="42" stroke="#20271a" stroke-width="0.8"/>' +
+      '<line x1="39" y1="29" x2="39" y2="42" stroke="#20271a" stroke-width="0.8"/>' +
+      // 第4层：中间观瞄设备（低矮小方块）
+      '<rect x="12" y="20" width="7" height="12" rx="1" fill="#1c2415" stroke="#20271a" stroke-width="0.8"/>' +
+      '<rect x="13.5" y="22" width="4" height="2" rx="0.6" fill="#5a6e45"/>' +
+      '<circle cx="15.5" cy="28" r="1.8" fill="#1c2415" stroke="#20271a" stroke-width="0.6"/>' +
+      '<circle cx="15.5" cy="28" r="0.8" fill="#5a6e45"/>' +
+      // 天线
+      '<line x1="10" y1="10" x2="3" y2="3" stroke="#20271a" stroke-width="1"/>' +
       '</svg>',
   };
   const TANK_IMAGES = {};
@@ -2421,8 +2424,12 @@
         const hjt = TANK_TYPES[selfType] || TANK_TYPES.us;
         const spd = hjt.hjSpeed || 620;
         const tt = hjt;
+        // 红箭10：左右发射箱交替发射（左箱一发、右箱一发，出生点侧向偏移）
+        let ox = 0;
+        if (hjt.instaKill) { localHjSide = localHjSide ? 0 : 1; ox = (localHjSide ? -1 : 1) * 7; }
         predBullets.push({
-          x: pred.x + Math.cos(ta) * 34, y: pred.y + Math.sin(ta) * 34,
+          x: pred.x + Math.cos(ta) * 34 - Math.sin(ta) * ox,
+          y: pred.y + Math.sin(ta) * 34 + Math.cos(ta) * ox,
           vx: Math.cos(ta) * spd, vy: Math.sin(ta) * spd,
           pen: tt.pen, t: performance.now(),
           isHj: !!hjt.instaKill, // 红箭10：极快、不可反弹、撞墙消失
