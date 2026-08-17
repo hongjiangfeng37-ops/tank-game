@@ -66,12 +66,15 @@
   const MAG_SIZE = 1;       // 弹匣容量：单发装填（与 server.js 一致）
   const TANK_TYPES = {      // 客户端展示用（与 server.js 一致）
     us: { name: '美军 M1A1标题党', reload: 4, eraMax: 300, pen: 800, penDrop: 100, armor: '600/200/400', armorEra: '900/800/400', color: '#6b8e5a' },
-    ru: { name: '俄军 T80U', reload: 6, eraMax: 500, pen: 750, penDrop: 200, armor: '800/250/700', armorEra: '1200/1050/700', color: '#5f7a52' },
+    ru: { name: '俄军 T90A', reload: 6, eraMax: 500, pen: 750, penDrop: 200, armor: '800/300/700', armorEra: '1200/1100/700', color: '#5f7a52' },
     jp: { name: '日军 90式主战坦克', reload: 3, eraMax: 200, pen: 500, penGain: 200, penBounceMax: 9, armor: '550/150/250', armorEra: '800/400/500', color: '#7a6a4a' },
+    il: { name: '以军 梅卡瓦Mk4', reload: 4.5, eraMax: 200, pen: 550, penDrop: 100, armor: '600+200机/250+200机/450+200机', armorEra: '850+200机/800+200机/450+200机', color: '#8a9a6a', mortar: true },
+    cn: { name: '中国 99B主战坦克', reload: 5, eraMax: 400, pen: 850, penDrop: 50, armor: '1000/150/650', armorEra: '1450/600/1100', color: '#c9b27c', aps: true },
+    de: { name: '欧盟 豹二A6主战坦克', reload: 5, eraMax: 300, pen: 800, penDrop: 0, penBounceMax: 2, armor: '600/200/400', armorEra: '900/800/400', color: '#7a8a5a' },
   };
   const PALETTE = ['#ff5d5d', '#4fc3f7', '#66bb6a', '#ffee58', '#ff8a65', '#ba68c8', '#4dd0e1', '#f06292', '#aed581', '#90a4ae'];
-  const PUP_COLOR = { health: '#4caf50', shield: '#4dd0e1', rapid: '#ffca28', triple: '#ff7043' };
-  const PUP_ICON = { health: '回血', shield: '护盾', rapid: '速射', triple: '三连' };
+  const PUP_COLOR = { health: '#4caf50', shield: '#4dd0e1', rapid: '#ffca28', triple: '#ff7043', atgm: '#ff7043' };
+  const PUP_ICON = { health: '回血', shield: '护盾', rapid: '速射', triple: '三连', atgm: '导弹' };
   const INTERP_MS = 20; // 快照插值延迟（60Hz 快照下 20ms 足够平滑，更低感知延迟）
 
   // ---------------- DOM ----------------
@@ -88,7 +91,7 @@
     pingText: $('pingText'), btnMute: $('btnMute'), btnLeave: $('btnLeave'), btnPub: $('btnPub'),
     countdown: $('countdown'), banner: $('banner'), killfeed: $('killfeed'),
     hud: $('hud'), hpBar: $('hpBar'), hpText: $('hpText'), ammoBox: $('ammoBox'), eraBox: $('eraBox'), buffs: $('buffs'),
-    tpUs: $('tp-us'), tpRu: $('tp-ru'), tpJp: $('tp-jp'),
+    tpUs: $('tp-us'), tpRu: $('tp-ru'), tpJp: $('tp-jp'), tpIl: $('tp-il'), tpCn: $('tp-cn'), tpDe: $('tp-de'),
     partTrack: $('part-track'), partTurret: $('part-turret'), partEngine: $('part-engine'),
     partAmmo: $('part-ammo'), partOptics: $('part-optics'),
     repairBar: $('repairBar'), damageNote: $('damageNote'),
@@ -164,6 +167,13 @@
   let selfRepair = 0;           // 维修进度(秒)
   let selfFire = 0;             // 起火剩余秒数
   let selfAmFire = 0;           // 弹药架起火标记（更剧烈特效）
+  let selfMortar = 0;           // 梅卡瓦迫击炮锁定进度 0-3
+  let selfAg = 0;               // 反坦克导弹持有数
+  let selfJm = 0;               // 自己被窗帘干扰
+  let mortarMode = false;       // 梅卡瓦当前火炮模式：false=主炮 true=迫击炮
+  let selfApsN = 0;             // 99B 主动防御充能
+  let selfApsOn = 0;            // 主动防御激活剩余秒
+  let selfApsCd = 0;            // 主动防御冷却剩余秒
   let selfType = 'us';          // 坦克型号
   let selfEra = 300;            // 反应装甲血量（服务器权威同步）
 
@@ -426,6 +436,12 @@
       selfRepair = me.rp || 0;
       selfFire = me.fr || 0;
       selfAmFire = me.am || 0;
+      selfMortar = me.mt || 0;   // 迫击炮锁定进度
+      selfAg = me.ag || 0;       // 反坦克导弹
+      selfJm = me.jm || 0;       // 被窗帘干扰
+      selfApsN = me.ap || 0;     // 主动防御充能
+      selfApsOn = me.apo || 0;   // 主动防御激活剩余
+      selfApsCd = me.apc || 0;   // 主动防御冷却剩余
       if (me.ty) selfType = me.ty;
       if (me.era != null) selfEra = me.era;
     }
@@ -470,6 +486,7 @@
         case 'pick':
           sfx.pick();
           spawnParticles(e.x, e.y, PUP_COLOR[e.type] || '#fff', 8, 2.2);
+          if (e.id === myId && e.type === 'atgm') showDamageNote('🎯 拾取反坦克导弹！按 B 发射（手机：导弹键）', true);
           break;
         case 'tick':
           sfx.tick();
@@ -505,6 +522,34 @@
           break;
         case 'leave':
           addKillfeed(null, e.name + ' 离开');
+          break;
+        case 'mshot':
+          // 迫击炮发射：落点标记（无视地形弧线）
+          spawnParticles(e.tx, e.ty, '#ff7043', 10, 3.5);
+          if (e.id === myId) showDamageNote('💣 迫击炮已发射！', true);
+          break;
+        case 'mboom':
+          spawnParticles(e.x, e.y, '#ff8a65', 22, 4);
+          spawnParticles(e.x, e.y, '#3a3a3a', 12, 3.5);
+          sfx.boom();
+          break;
+        case 'mhit':
+          if (e.id === myId) showDamageNote('💥 被迫击炮命中！爆反 -30%', false);
+          break;
+        case 'jam':
+          if (e.id === myId) showDamageNote('📡 反坦克导弹被干扰，原路返回！', false);
+          break;
+        case 'atgm':
+          if (e.id === myId) showDamageNote('🚀 反坦克导弹发射！', true);
+          break;
+        case 'aps':
+          if (e.id === myId) {
+            if (e.on) showDamageNote('🛡️ 主动防御开启！抵挡一次攻击（10秒）', true);
+            else if (e.n === 2) showDamageNote('🛡️ 主动防御已充能（2次）', true);
+          }
+          break;
+        case 'apsblock':
+          if (e.id === myId) showDamageNote('🛡️ 主动防御抵挡了攻击！', true);
           break;
         default: break;
       }
@@ -577,6 +622,17 @@
     ensureAudio();
     if (e.code === 'KeyM') { toggleMute(); return; }
     keys[e.code] = true;
+    // 梅卡瓦：1/2 切换主炮/迫击炮
+    if (e.code === 'Digit1' && selfType === 'il') { mortarMode = false; showDamageNote('🔫 主炮模式', true); }
+    if (e.code === 'Digit2' && selfType === 'il') { mortarMode = true; showDamageNote('💣 迫击炮模式（静止锁定）', true); }
+    // B 键发射反坦克导弹
+    if (e.code === 'KeyB' && selfAg > 0 && ws && ws.readyState === 1 && phase === 'play') {
+      ws.send(JSON.stringify({ t: 'atgm' }));
+    }
+    // E 键开启 99B 主动防御
+    if (e.code === 'KeyE' && selfType === 'cn' && ws && ws.readyState === 1 && phase === 'play') {
+      ws.send(JSON.stringify({ t: 'aps' }));
+    }
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
   });
   window.addEventListener('keyup', (e) => { keys[e.code] = false; });
@@ -667,6 +723,28 @@
     }
   }
 
+  // 手机端：梅卡瓦迫击炮切换键 + 反坦克导弹键
+  const mortarBtn = document.getElementById('btnMortarMode');
+  if (mortarBtn) {
+    mortarBtn.addEventListener('click', () => {
+      mortarMode = !mortarMode;
+      mortarBtn.classList.toggle('on', mortarMode);
+      showDamageNote(mortarMode ? '💣 迫击炮模式（静止锁定）' : '🔫 主炮模式', true);
+    });
+  }
+  const atgmBtn = document.getElementById('btnAtgm');
+  if (atgmBtn) {
+    atgmBtn.addEventListener('click', () => {
+      if (selfAg > 0 && ws && ws.readyState === 1 && phase === 'play') ws.send(JSON.stringify({ t: 'atgm' }));
+    });
+  }
+  const apsBtn = document.getElementById('btnAps');
+  if (apsBtn) {
+    apsBtn.addEventListener('click', () => {
+      if (selfType === 'cn' && ws && ws.readyState === 1 && phase === 'play') ws.send(JSON.stringify({ t: 'aps' }));
+    });
+  }
+
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && ws && ws.readyState === 1) {
       ws.send(JSON.stringify({ t: 'input', thr: 0, steer: 0, ta: mouseAngle, shoot: false, boost: false }));
@@ -702,6 +780,11 @@
     lastInputSent = now;
     if (!ws || ws.readyState !== 1 || phase !== 'play' || !selfAlive) return;
     const inp = currentInput();
+    // 梅卡瓦迫击炮模式：开火改为发送迫击炮指令（锁定完成与冷却由服务器判定）
+    if (mortarMode && inp.shoot) {
+      ws.send(JSON.stringify({ t: 'mfire' }));
+      inp.shoot = false;
+    }
     ws.send(JSON.stringify({ t: 'input', thr: inp.thr, steer: inp.steer, ta: inp.ta, shoot: inp.shoot, boost: inp.boost }));
   }
   function sendPing(now) {
@@ -865,6 +948,18 @@
     // 子弹：远程用插值快照，自己的用本地预测（即时反馈，避免等服务器往返）
     for (const b of bullets) {
       if (b.o === myId) continue; // 自己的子弹由本地预测渲染
+      if (b.ag) {
+        // 反坦克导弹：慢速长条 + 尾焰
+        const tx = b.x - b.vx * 0.12, ty = b.y - b.vy * 0.12;
+        ctx.strokeStyle = 'rgba(255, 120, 60, 0.8)';
+        ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(b.x, b.y); ctx.stroke();
+        ctx.fillStyle = '#ffd9a0';
+        ctx.beginPath(); ctx.arc(b.x, b.y, 3.6, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(255, 160, 70, 0.4)';
+        ctx.beginPath(); ctx.arc(b.x, b.y, 9, 0, Math.PI * 2); ctx.fill();
+        continue;
+      }
       const tx = b.x - b.vx * 0.045, ty = b.y - b.vy * 0.045;
       ctx.strokeStyle = 'rgba(255, 210, 110, 0.55)';
       ctx.lineWidth = 2.5;
@@ -899,6 +994,45 @@
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
     drawFog();
+    // 梅卡瓦迫击炮模式：锁定进度条 + 手机按钮显隐
+    if (touch.mode) {
+      const mb = document.getElementById('btnMortarMode');
+      if (mb) mb.classList.toggle('show', selfType === 'il');
+      const ab = document.getElementById('btnAtgm');
+      if (ab) ab.classList.toggle('show', selfAg > 0);
+      const pb = document.getElementById('btnAps');
+      if (pb) {
+        pb.classList.toggle('show', selfType === 'cn');
+        pb.classList.toggle('on', selfApsOn > 0);
+      }
+    }
+    // 99B 主动防御 HUD 状态
+    if (selfType === 'cn' && selfAlive && phase === 'play') {
+      const sby = canvas.clientHeight - 88;
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      rr(canvas.clientWidth / 2 - 95, sby - 3, 190, 22, 8); ctx.fill();
+      ctx.font = '12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = selfApsOn > 0 ? '#4dd0e1' : (selfApsCd > 0 ? '#ff8a80' : '#fff');
+      const txt = selfApsOn > 0 ? ('🛡️ 主动防御激活 ' + selfApsOn + 's') :
+        (selfApsCd > 0 ? ('🛡️ 冷却中 ' + selfApsCd + 's') :
+          ('🛡️ 主动防御 x' + selfApsN + '（按 E 开启）'));
+      ctx.fillText(txt, canvas.clientWidth / 2, sby + 11);
+    }
+    if (mortarMode && selfType === 'il' && selfAlive && phase === 'play') {
+      const bw = 170, bh = 10;
+      const bx = canvas.clientWidth / 2 - bw / 2, by = canvas.clientHeight - 66;
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      rr(bx - 3, by - 3, bw + 6, bh + 6, 6); ctx.fill();
+      const frac = Math.min(1, selfMortar / 3);
+      ctx.fillStyle = selfJm ? '#ff5d5d' : (frac >= 1 ? '#66bb6a' : '#ffca28');
+      rr(bx, by, bw * frac, bh, 4); ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.font = '12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(selfJm ? '📡 被窗帘干扰！锁定中断' : (frac >= 1 ? '✅ 锁定完成，开火发射！' : '💣 迫击炮锁定中… ' + Math.round(selfMortar) + '/3'),
+        canvas.clientWidth / 2, by - 7);
+    }
   }
 
   // 观瞄失效迷雾：平时无迷雾；观瞄设备损坏后进入全黑状态，仅坦克周围留一点光
@@ -1026,10 +1160,10 @@
       '<circle cx="38.5" cy="16.5" r="0.9" fill="#4a5568"/>' +
       '<line x1="15" y1="8" x2="4" y2="0" stroke="#3a3524" stroke-width="1.1"/>' +
       '</svg>',
-    // 俄军车体：四方主体 + 前楔车头 + 尾部散热格栅（中部被炮塔盖住，从简）
+    // 俄军 T90A 车体：四方主体 + 外层爆反分层（前后端+侧缘爆反块）+ 两个红点眼睛 + 现代涂色
     ruBody: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 78">' +
       '<defs><linearGradient id="rubg" x1="0" y1="0" x2="0" y2="1">' +
-      '<stop offset="0" stop-color="#64764f"/><stop offset="0.5" stop-color="#4c5c3e"/><stop offset="1" stop-color="#39472c"/>' +
+      '<stop offset="0" stop-color="#5a6a48"/><stop offset="0.5" stop-color="#465438"/><stop offset="1" stop-color="#333f28"/>' +
       '</linearGradient></defs>' +
       // 履带 + 履带齿
       '<rect x="3" y="3" width="94" height="12" rx="6" fill="#10150c"/>' +
@@ -1040,15 +1174,34 @@
       '<rect x="5" y="16" width="90" height="3.5" fill="#2a3526"/>' +
       '<rect x="5" y="58.5" width="90" height="3.5" fill="#2a3526"/>' +
       // 车体主体（四四方方）
-      '<path d="M20,17.5 L90,17.5 Q97,17.5 97,23.5 L97,54.5 Q97,60.5 90,60.5 L20,60.5 L12,50.5 L12,27.5 Z" fill="url(#rubg)" stroke="#222b1d" stroke-width="1.5"/>' +
+      '<path d="M20,17.5 L90,17.5 Q97,17.5 97,23.5 L97,54.5 Q97,60.5 90,60.5 L20,60.5 L12,50.5 L12,27.5 Z" fill="url(#rubg)" stroke="#1c2313" stroke-width="1.5"/>' +
+      // 黑色迷彩斑（T90A 现代涂装）
+      '<path d="M30,19 L46,19 L42,30 L28,30 Z" fill="#222b18"/>' +
+      '<path d="M70,34 L86,34 L84,48 L68,46 Z" fill="#222b18"/>' +
+      '<path d="M24,44 L38,44 L36,56 L22,56 Z" fill="#39452b"/>' +
       // 前部楔形车头
-      '<path d="M58,19 L93,19 Q96,19 96,23 L96,55 Q96,59 93,59 L58,59 L44,39 Z" fill="#55684c" stroke="#222b1d" stroke-width="1"/>' +
+      '<path d="M58,19 L93,19 Q96,19 96,23 L96,55 Q96,59 93,59 L58,59 L44,39 Z" fill="#4c5a3c" stroke="#1c2313" stroke-width="1"/>' +
+      // 外层爆反分层：车体前端爆反块（2x2）+ 侧缘爆反条
+      '<rect x="76" y="20" width="6.5" height="6.5" fill="#4d5e35" stroke="#1c2313" stroke-width="0.9"/>' +
+      '<rect x="86" y="20" width="7" height="6.5" fill="#4d5e35" stroke="#1c2313" stroke-width="0.9"/>' +
+      '<rect x="76" y="28" width="6.5" height="6.5" fill="#4d5e35" stroke="#1c2313" stroke-width="0.9"/>' +
+      '<rect x="86" y="28" width="7" height="6.5" fill="#4d5e35" stroke="#1c2313" stroke-width="0.9"/>' +
+      '<rect x="76" y="43" width="6.5" height="6.5" fill="#4d5e35" stroke="#1c2313" stroke-width="0.9"/>' +
+      '<rect x="86" y="43" width="7" height="6.5" fill="#4d5e35" stroke="#1c2313" stroke-width="0.9"/>' +
+      '<rect x="76" y="51.5" width="6.5" height="6.5" fill="#4d5e35" stroke="#1c2313" stroke-width="0.9"/>' +
+      '<rect x="86" y="51.5" width="7" height="6.5" fill="#4d5e35" stroke="#1c2313" stroke-width="0.9"/>' +
+      '<rect x="14" y="19" width="6" height="40" fill="#4d5e35" stroke="#1c2313" stroke-width="0.9"/>' + // 尾部爆反条
+      // 两个红点眼睛（车体前部两侧，T90A 特征；干扰激活时客户端叠加发光）
+      '<circle cx="74" cy="22.5" r="2.6" fill="#8c1f14" stroke="#1c2313" stroke-width="0.7"/>' +
+      '<circle cx="74" cy="22.5" r="1.2" fill="#e04030"/>' +
+      '<circle cx="74" cy="55.5" r="2.6" fill="#8c1f14" stroke="#1c2313" stroke-width="0.7"/>' +
+      '<circle cx="74" cy="55.5" r="1.2" fill="#e04030"/>' +
       // 尾部散热格栅
-      '<rect x="13" y="23" width="10" height="32" rx="2" fill="#3d4a34" stroke="#222b1d" stroke-width="0.9"/>' +
-      '<line x1="13" y1="29.8" x2="23" y2="29.8" stroke="#222b1d" stroke-width="0.9"/>' +
-      '<line x1="13" y1="36.6" x2="23" y2="36.6" stroke="#222b1d" stroke-width="0.9"/>' +
-      '<line x1="13" y1="43.4" x2="23" y2="43.4" stroke="#222b1d" stroke-width="0.9"/>' +
-      '<line x1="13" y1="50.2" x2="23" y2="50.2" stroke="#222b1d" stroke-width="0.9"/>' +
+      '<rect x="13" y="23" width="9" height="32" rx="2" fill="#3d4a34" stroke="#1c2313" stroke-width="0.9"/>' +
+      '<line x1="13" y1="29.8" x2="22" y2="29.8" stroke="#1c2313" stroke-width="0.9"/>' +
+      '<line x1="13" y1="36.6" x2="22" y2="36.6" stroke="#1c2313" stroke-width="0.9"/>' +
+      '<line x1="13" y1="43.4" x2="22" y2="43.4" stroke="#1c2313" stroke-width="0.9"/>' +
+      '<line x1="13" y1="50.2" x2="22" y2="50.2" stroke="#1c2313" stroke-width="0.9"/>' +
       // 前灯
       '<circle cx="94.5" cy="25" r="1.7" fill="#ffe9a3"/>' +
       '<circle cx="94.5" cy="53" r="1.7" fill="#ffe9a3"/>' +
@@ -1180,6 +1333,219 @@
       '<line x1="14" y1="8" x2="4" y2="1" stroke="#23291f" stroke-width="1.1"/>' +
       '<rect x="7.5" y="30" width="5.5" height="6.5" rx="1" fill="#3a442e" stroke="#23291f" stroke-width="0.8"/>' +
       '</svg>',
+    // 以军 梅卡瓦车体：发动机前置（前部发动机格栅+盖板）、后部乘员舱、以军三色迷彩（橄榄绿/沙色/黑）
+    ilBody: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 84">' +
+      '<defs><linearGradient id="ilbg" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0" stop-color="#7a8260"/><stop offset="0.5" stop-color="#666e4e"/><stop offset="1" stop-color="#52583e"/>' +
+      '</linearGradient></defs>' +
+      // 履带 + 履带齿
+      '<rect x="3" y="3" width="94" height="13" rx="6" fill="#14170f"/>' +
+      '<rect x="3" y="68" width="94" height="13" rx="6" fill="#14170f"/>' +
+      '<line x1="8" y1="9.5" x2="97" y2="9.5" stroke="#0a0c06" stroke-width="4" stroke-dasharray="2.6 4.4"/>' +
+      '<line x1="8" y1="74.5" x2="97" y2="74.5" stroke="#0a0c06" stroke-width="4" stroke-dasharray="2.6 4.4"/>' +
+      // 侧裙板上下缘
+      '<rect x="5" y="17" width="90" height="3.5" fill="#3c3f2e"/>' +
+      '<rect x="5" y="63.5" width="90" height="3.5" fill="#3c3f2e"/>' +
+      // 车体主体（四四方方，前高后低——前置发动机舱更高）
+      '<path d="M18,18 L96,18 Q100,18 100,25 L100,59 Q100,66 96,66 L18,66 L10,57 L10,27 Z" fill="url(#ilbg)" stroke="#2e3122" stroke-width="1.5"/>' +
+      // 以军迷彩斑块（沙色/黑色）
+      '<path d="M30,19 L50,19 L46,32 L28,32 Z" fill="#9a8a5a"/>' +
+      '<path d="M64,20 L80,20 L76,34 L60,34 Z" fill="#2b2e20"/>' +
+      '<path d="M22,44 L40,44 L38,58 L20,58 Z" fill="#9a8a5a"/>' +
+      '<path d="M72,50 L90,50 L88,62 L70,62 Z" fill="#2b2e20"/>' +
+      // 前置发动机舱（前部）：盖板 + 散热格栅（梅卡瓦特征——发动机在前面）
+      '<path d="M58,19 L94,19 Q98,19 98,24 L98,60 Q98,65 94,65 L58,65 L46,42 Z" fill="#6b7352" stroke="#2e3122" stroke-width="1"/>' +
+      '<rect x="60" y="22" width="16" height="20" rx="2" fill="#52583e" stroke="#2e3122" stroke-width="0.9"/>' +
+      '<line x1="62" y1="26" x2="74" y2="26" stroke="#2e3122" stroke-width="0.9"/>' +
+      '<line x1="62" y1="30" x2="74" y2="30" stroke="#2e3122" stroke-width="0.9"/>' +
+      '<line x1="62" y1="34" x2="74" y2="34" stroke="#2e3122" stroke-width="0.9"/>' +
+      '<line x1="62" y1="38" x2="74" y2="38" stroke="#2e3122" stroke-width="0.9"/>' +
+      // 发动机舱侧格栅（前部左右）
+      '<line x1="78" y1="24" x2="92" y2="24" stroke="#2e3122" stroke-width="1"/>' +
+      '<line x1="78" y1="30" x2="92" y2="30" stroke="#2e3122" stroke-width="1"/>' +
+      '<line x1="78" y1="36" x2="92" y2="36" stroke="#2e3122" stroke-width="1"/>' +
+      '<line x1="78" y1="42" x2="92" y2="42" stroke="#2e3122" stroke-width="1"/>' +
+      '<line x1="78" y1="48" x2="92" y2="48" stroke="#2e3122" stroke-width="1"/>' +
+      '<line x1="78" y1="54" x2="92" y2="54" stroke="#2e3122" stroke-width="1"/>' +
+      '<line x1="78" y1="60" x2="92" y2="60" stroke="#2e3122" stroke-width="1"/>' +
+      // 尾部（左）乘员舱门 + 尾部装甲
+      '<rect x="14" y="24" width="7" height="36" rx="2" fill="#5c6346" stroke="#2e3122" stroke-width="0.9"/>' +
+      '<line x1="15" y1="32" x2="20" y2="32" stroke="#2e3122" stroke-width="0.8"/>' +
+      '<line x1="15" y1="42" x2="20" y2="42" stroke="#2e3122" stroke-width="0.8"/>' +
+      '<line x1="15" y1="52" x2="20" y2="52" stroke="#2e3122" stroke-width="0.8"/>' +
+      // 前灯
+      '<circle cx="97.5" cy="24" r="1.8" fill="#ffe9a3"/>' +
+      '<circle cx="97.5" cy="60" r="1.8" fill="#ffe9a3"/>' +
+      '</svg>',
+    // 以军 梅卡瓦炮塔：窄长方形圆角（位于车体中后部），分层结构 + 以军迷彩
+    ilTurret: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 52">' +
+      '<defs><linearGradient id="iltg" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0" stop-color="#7a8260"/><stop offset="1" stop-color="#52583e"/>' +
+      '</linearGradient></defs>' +
+      // 第1层：窄长炮塔主体（梅卡瓦炮塔前窄后宽，圆角方形）
+      '<path d="M52,17 L46,8 L16,8 L7,17 L7,35 L16,44 L46,44 L52,35 Z" fill="url(#iltg)" stroke="#2e3122" stroke-width="1.5"/>' +
+      // 第2层：顶部装甲面板（内缩分层）
+      '<path d="M48,19 L43,13 L19,13 L12,19 L12,33 L19,39 L43,39 L48,33 Z" fill="#6b7352" stroke="#2e3122" stroke-width="1"/>' +
+      // 迷彩斑
+      '<path d="M42,14 L48,20 L42,26 L36,20 Z" fill="#9a8a5a"/>' +
+      '<path d="M14,26 L22,26 L20,36 L12,34 Z" fill="#2b2e20"/>' +
+      // 第3层：炮盾
+      '<path d="M47,20 L53,26 L47,32 L41,26 Z" fill="#52583e" stroke="#2e3122" stroke-width="1"/>' +
+      // 第4层：舱盖（梅卡瓦车长/炮手靠后）+ 观瞄
+      '<circle cx="32" cy="26" r="5.4" fill="#5c6346" stroke="#2e3122" stroke-width="1"/>' +
+      '<circle cx="32" cy="26" r="3.8" fill="#7a8260" stroke="#2e3122" stroke-width="1"/>' +
+      '<circle cx="32" cy="26" r="1.5" fill="#2e3122"/>' +
+      '<rect x="36" y="13" width="6" height="3.4" rx="1" fill="#1c1f18" stroke="#2e3122" stroke-width="0.7"/>' +
+      '<rect x="37" y="13.8" width="4" height="1.8" rx="0.6" fill="#8a9a6a"/>' +
+      // 第5层：设备（天线、后部储物、周视镜）
+      '<circle cx="26" cy="18" r="2" fill="#1c1f18" stroke="#2e3122" stroke-width="0.7"/>' +
+      '<circle cx="26" cy="18" r="0.9" fill="#8a9a6a"/>' +
+      '<line x1="16" y1="9" x2="6" y2="2" stroke="#2e3122" stroke-width="1.1"/>' +
+      '<rect x="8" y="30" width="5" height="7" rx="1" fill="#5c6346" stroke="#2e3122" stroke-width="0.8"/>' +
+      '</svg>',
+    // 中国 99B车体：沙色涂装（沙漠黄）+ 前楔车头 + 车尾侧面格栅装甲（防RPG栅栏笼）
+    cnBody: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 84">' +
+      '<defs><linearGradient id="cnbg" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0" stop-color="#cdb87f"/><stop offset="0.5" stop-color="#bca468"/><stop offset="1" stop-color="#9a8452"/>' +
+      '</linearGradient></defs>' +
+      // 履带 + 履带齿
+      '<rect x="3" y="3" width="94" height="13" rx="6" fill="#1a1710"/>' +
+      '<rect x="3" y="68" width="94" height="13" rx="6" fill="#1a1710"/>' +
+      '<line x1="8" y1="9.5" x2="97" y2="9.5" stroke="#0c0a05" stroke-width="4" stroke-dasharray="2.6 4.4"/>' +
+      '<line x1="8" y1="74.5" x2="97" y2="74.5" stroke="#0c0a05" stroke-width="4" stroke-dasharray="2.6 4.4"/>' +
+      // 侧裙板上下缘
+      '<rect x="5" y="17" width="90" height="3.5" fill="#7a6a42"/>' +
+      '<rect x="5" y="63.5" width="90" height="3.5" fill="#7a6a42"/>' +
+      // 车体主体（四四方方）
+      '<path d="M18,19 L96,19 Q100,19 100,25 L100,59 Q100,65 96,65 L18,65 L10,56 L10,28 Z" fill="url(#cnbg)" stroke="#5c4f31" stroke-width="1.5"/>' +
+      // 沙漠迷彩斑（深沙/橄榄色块）
+      '<path d="M28,21 L42,21 L39,32 L26,32 Z" fill="#8d7a4b"/>' +
+      '<path d="M50,20 L62,20 L60,31 L48,31 Z" fill="#a3905e"/>' +
+      '<path d="M24,48 L38,48 L36,60 L22,60 Z" fill="#8d7a4b"/>' +
+      '<path d="M60,52 L74,52 L72,61 L58,61 Z" fill="#a3905e"/>' +
+      // 前部楔形车头
+      '<path d="M58,21 L96,21 Q99,21 99,25 L99,59 Q99,63 96,63 L58,63 L44,42 Z" fill="#b39a5f" stroke="#5c4f31" stroke-width="1"/>' +
+      // 车尾侧面格栅装甲（防RPG栅栏笼，左右两片）
+      '<rect x="10" y="18" width="6" height="48" rx="1.5" fill="none" stroke="#7a6a42" stroke-width="1.4"/>' +
+      '<line x1="13" y1="18" x2="13" y2="66" stroke="#7a6a42" stroke-width="0.8"/>' +
+      '<line x1="11" y1="22" x2="15" y2="22" stroke="#7a6a42" stroke-width="0.8"/>' +
+      '<line x1="11" y1="30" x2="15" y2="30" stroke="#7a6a42" stroke-width="0.8"/>' +
+      '<line x1="11" y1="38" x2="15" y2="38" stroke="#7a6a42" stroke-width="0.8"/>' +
+      '<line x1="11" y1="46" x2="15" y2="46" stroke="#7a6a42" stroke-width="0.8"/>' +
+      '<line x1="11" y1="54" x2="15" y2="54" stroke="#7a6a42" stroke-width="0.8"/>' +
+      '<line x1="11" y1="62" x2="15" y2="62" stroke="#7a6a42" stroke-width="0.8"/>' +
+      // 尾部格栅
+      '<rect x="16" y="25" width="7" height="34" rx="2" fill="#8d7a4b" stroke="#5c4f31" stroke-width="0.9"/>' +
+      '<line x1="16" y1="31.5" x2="23" y2="31.5" stroke="#5c4f31" stroke-width="0.9"/>' +
+      '<line x1="16" y1="38" x2="23" y2="38" stroke="#5c4f31" stroke-width="0.9"/>' +
+      '<line x1="16" y1="44.5" x2="23" y2="44.5" stroke="#5c4f31" stroke-width="0.9"/>' +
+      '<line x1="16" y1="51" x2="23" y2="51" stroke="#5c4f31" stroke-width="0.9"/>' +
+      // 前灯
+      '<circle cx="97.5" cy="27" r="1.8" fill="#ffe9a3"/>' +
+      '<circle cx="97.5" cy="57" r="1.8" fill="#ffe9a3"/>' +
+      '</svg>',
+    // 中国 99B炮塔：沙色方形 + 正面爆反块 + 炮塔背面格栅装甲（栅栏笼）+ 双舱盖分层
+    cnTurret: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 52">' +
+      '<defs><linearGradient id="cntg" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0" stop-color="#c2aa6d"/><stop offset="1" stop-color="#93804f"/>' +
+      '</linearGradient></defs>' +
+      // 第1层：方形炮塔主体（棱角分明，前宽后窄）
+      '<path d="M52,18 L46,8 L13,8 L6,18 L6,34 L13,44 L46,44 L52,34 Z" fill="url(#cntg)" stroke="#5c4f31" stroke-width="1.5"/>' +
+      // 第2层：顶部装甲面板
+      '<path d="M48,20 L43,13 L17,13 L11,20 L11,32 L17,39 L43,39 L48,32 Z" fill="#b39a5f" stroke="#5c4f31" stroke-width="1"/>' +
+      '<path d="M48,20 L17,13" stroke="#e0cd9c" stroke-width="0.9" opacity="0.55"/>' +
+      // 沙漠迷彩斑
+      '<path d="M40,14 L47,20 L40,26 L33,20 Z" fill="#8d7a4b"/>' +
+      '<path d="M14,26 L21,26 L19,35 L12,33 Z" fill="#a3905e"/>' +
+      // 第3层：正面爆反块（前尖两侧，99式特征）
+      '<rect x="41" y="18.5" width="6" height="6" fill="#7a8a52" stroke="#5c4f31" stroke-width="0.9"/>' +
+      '<rect x="41" y="27.5" width="6" height="6" fill="#7a8a52" stroke="#5c4f31" stroke-width="0.9"/>' +
+      '<rect x="34" y="10.5" width="6" height="6" fill="#7a8a52" stroke="#5c4f31" stroke-width="0.9"/>' +
+      '<rect x="36" y="35" width="6" height="6" fill="#7a8a52" stroke="#5c4f31" stroke-width="0.9"/>' +
+      // 炮盾
+      '<path d="M47,21 L53,26 L47,31 L42,26 Z" fill="#8d7a4b" stroke="#5c4f31" stroke-width="1"/>' +
+      // 第4层：炮塔背面格栅装甲（栅栏笼，左端）
+      '<rect x="6" y="10" width="6" height="32" rx="1.5" fill="none" stroke="#7a6a42" stroke-width="1.4"/>' +
+      '<line x1="9" y1="10" x2="9" y2="42" stroke="#7a6a42" stroke-width="0.8"/>' +
+      '<line x1="7" y1="14" x2="11" y2="14" stroke="#7a6a42" stroke-width="0.8"/>' +
+      '<line x1="7" y1="20" x2="11" y2="20" stroke="#7a6a42" stroke-width="0.8"/>' +
+      '<line x1="7" y1="26" x2="11" y2="26" stroke="#7a6a42" stroke-width="0.8"/>' +
+      '<line x1="7" y1="32" x2="11" y2="32" stroke="#7a6a42" stroke-width="0.8"/>' +
+      '<line x1="7" y1="38" x2="11" y2="38" stroke="#7a6a42" stroke-width="0.8"/>' +
+      // 第5层：双舱盖凸台
+      '<circle cx="29" cy="20" r="5.4" fill="#8d7a4b" stroke="#5c4f31" stroke-width="1"/>' +
+      '<circle cx="29" cy="20" r="4" fill="#c2aa6d" stroke="#5c4f31" stroke-width="1"/>' +
+      '<circle cx="29" cy="20" r="1.5" fill="#5c4f31"/>' +
+      '<circle cx="20" cy="23" r="4" fill="#8d7a4b" stroke="#5c4f31" stroke-width="1"/>' +
+      '<circle cx="20" cy="23" r="2.8" fill="#c2aa6d" stroke="#5c4f31" stroke-width="1"/>' +
+      // 设备（观瞄、周视镜、天线）
+      '<rect x="35" y="10.5" width="6" height="3.4" rx="1" fill="#3a3220" stroke="#5c4f31" stroke-width="0.7"/>' +
+      '<rect x="36" y="11.3" width="4" height="1.8" rx="0.6" fill="#e0cd9c"/>' +
+      '<circle cx="32" cy="29" r="2.4" fill="#3a3220" stroke="#5c4f31" stroke-width="0.8"/>' +
+      '<circle cx="32" cy="29" r="1" fill="#e0cd9c"/>' +
+      '<line x1="15" y1="9" x2="5" y2="2" stroke="#5c4f31" stroke-width="1.1"/>' +
+      '</svg>',
+    // 欧盟 豹二A6车体：四方主体 + 德斑迷彩（绿底+黑棕斑块）+ 前楔车头
+    deBody: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 84">' +
+      '<defs><linearGradient id="debg" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0" stop-color="#5d6b47"/><stop offset="0.5" stop-color="#4d5a3a"/><stop offset="1" stop-color="#3c472c"/>' +
+      '</linearGradient></defs>' +
+      // 履带 + 履带齿
+      '<rect x="3" y="3" width="94" height="13" rx="6" fill="#161a10"/>' +
+      '<rect x="3" y="68" width="94" height="13" rx="6" fill="#161a10"/>' +
+      '<line x1="8" y1="9.5" x2="97" y2="9.5" stroke="#0a0d05" stroke-width="4" stroke-dasharray="2.6 4.4"/>' +
+      '<line x1="8" y1="74.5" x2="97" y2="74.5" stroke="#0a0d05" stroke-width="4" stroke-dasharray="2.6 4.4"/>' +
+      // 侧裙板上下缘
+      '<rect x="5" y="17" width="90" height="3.5" fill="#2a3320"/>' +
+      '<rect x="5" y="63.5" width="90" height="3.5" fill="#2a3320"/>' +
+      // 车体主体
+      '<path d="M18,19 L96,19 Q100,19 100,25 L100,59 Q100,65 96,65 L18,65 L10,56 L10,28 Z" fill="url(#debg)" stroke="#222b16" stroke-width="1.5"/>' +
+      // 德斑迷彩（黑/棕不规则斑）
+      '<path d="M30,20 L48,20 L44,33 L27,33 Z" fill="#2a2f1c"/>' +
+      '<path d="M56,22 L72,22 L68,34 L54,34 Z" fill="#5a4a30"/>' +
+      '<path d="M24,46 L40,46 L38,60 L22,60 Z" fill="#5a4a30"/>' +
+      '<path d="M62,48 L78,48 L76,60 L60,60 Z" fill="#2a2f1c"/>' +
+      // 前部楔形车头
+      '<path d="M58,21 L96,21 Q99,21 99,25 L99,59 Q99,63 96,63 L58,63 L44,42 Z" fill="#54623f" stroke="#222b16" stroke-width="1"/>' +
+      // 尾部格栅
+      '<rect x="12" y="25" width="9" height="34" rx="2" fill="#3c472c" stroke="#222b16" stroke-width="0.9"/>' +
+      '<line x1="12" y1="31.5" x2="21" y2="31.5" stroke="#222b16" stroke-width="0.9"/>' +
+      '<line x1="12" y1="38" x2="21" y2="38" stroke="#222b16" stroke-width="0.9"/>' +
+      '<line x1="12" y1="44.5" x2="21" y2="44.5" stroke="#222b16" stroke-width="0.9"/>' +
+      '<line x1="12" y1="51" x2="21" y2="51" stroke="#222b16" stroke-width="0.9"/>' +
+      // 前灯
+      '<circle cx="97.5" cy="27" r="1.8" fill="#ffe9a3"/>' +
+      '<circle cx="97.5" cy="57" r="1.8" fill="#ffe9a3"/>' +
+      '</svg>',
+    // 欧盟 豹二A6炮塔：楔形多面体（前窄后宽带斜面）+ 分层 + 德斑迷彩 + 侧面储物箱
+    deTurret: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 52">' +
+      '<defs><linearGradient id="detg" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0" stop-color="#54623f"/><stop offset="1" stop-color="#3c472c"/>' +
+      '</linearGradient></defs>' +
+      // 第1层：楔形炮塔主体（豹二特征：前部窄、两侧斜面）
+      '<path d="M52,20 L47,9 L12,9 L5,20 L5,32 L12,43 L47,43 L52,32 Z" fill="url(#detg)" stroke="#222b16" stroke-width="1.5"/>' +
+      // 第2层：顶部装甲面板（斜向分面）
+      '<path d="M48,21 L43,14 L16,14 L10,21 L10,31 L16,38 L43,38 L48,31 Z" fill="#4d5a3a" stroke="#222b16" stroke-width="1"/>' +
+      '<path d="M48,21 L43,14" stroke="#7a8a52" stroke-width="0.9" opacity="0.55"/>' +
+      // 德斑迷彩
+      '<path d="M42,15 L48,21 L42,27 L36,21 Z" fill="#5a4a30"/>' +
+      '<path d="M14,24 L20,24 L18,33 L12,31 Z" fill="#2a2f1c"/>' +
+      // 第3层：炮盾
+      '<path d="M47,21 L53,26 L47,31 L42,26 Z" fill="#3c472c" stroke="#222b16" stroke-width="1"/>' +
+      // 第4层：双舱盖（豹二车长+炮手）+ 观瞄
+      '<circle cx="31" cy="21" r="5.6" fill="#3c472c" stroke="#222b16" stroke-width="1"/>' +
+      '<circle cx="31" cy="21" r="4.2" fill="#54623f" stroke="#222b16" stroke-width="1"/>' +
+      '<circle cx="31" cy="21" r="1.5" fill="#222b16"/>' +
+      '<circle cx="21" cy="24" r="4.2" fill="#3c472c" stroke="#222b16" stroke-width="1"/>' +
+      '<circle cx="21" cy="24" r="3" fill="#54623f" stroke="#222b16" stroke-width="1"/>' +
+      '<rect x="35" y="12" width="6" height="3.4" rx="1" fill="#1a2010" stroke="#222b16" stroke-width="0.7"/>' +
+      '<rect x="36" y="12.8" width="4" height="1.8" rx="0.6" fill="#7a8a52"/>' +
+      // 第5层：设备（周视镜、天线、后部储物箱）
+      '<circle cx="27" cy="17" r="2" fill="#1a2010" stroke="#222b16" stroke-width="0.7"/>' +
+      '<circle cx="27" cy="17" r="0.9" fill="#7a8a52"/>' +
+      '<line x1="15" y1="10" x2="5" y2="3" stroke="#222b16" stroke-width="1.1"/>' +
+      '<rect x="7" y="30" width="5.5" height="7" rx="1" fill="#3c472c" stroke="#222b16" stroke-width="0.8"/>' +
+      '</svg>',
   };
   const TANK_IMAGES = {};
   (function loadTankImages() {
@@ -1201,7 +1567,7 @@
     ctx.save();
     ctx.translate(t.x, t.y);
     ctx.rotate(t.a);
-    const bodyImg = TANK_IMAGES[({ ru: 'ruBody', jp: 'jpBody' }[t.ty] || 'usBody')];
+    const bodyImg = TANK_IMAGES[({ ru: 'ruBody', jp: 'jpBody', il: 'ilBody', cn: 'cnBody', de: 'deBody' }[t.ty] || 'usBody')];
     if (bodyImg) {
       // 车体铺满碰撞盒 52x44
       ctx.imageSmoothingEnabled = false;
@@ -1229,12 +1595,22 @@
     ctx.strokeStyle = t.ty === 'ru' ? '#13190e' : '#221d12';
     ctx.lineWidth = 1.4;
     ctx.beginPath(); ctx.arc(0, 0, 15.5, 0, Math.PI * 2); ctx.stroke();
+    // T90A 窗帘干扰激活：红点眼睛发光（扇形干扰启动指示）
+    if (t.ty === 'ru' && t.jm) {
+      const pulse = 0.6 + Math.sin(now / 90) * 0.3;
+      ctx.fillStyle = 'rgba(255, 60, 40, ' + pulse * 0.4 + ')';
+      ctx.beginPath(); ctx.arc(12.5, -9.3, 7, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(12.5, 9.3, 7, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(255, 130, 90, 0.95)';
+      ctx.beginPath(); ctx.arc(12.5, -9.3, 2.3, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(12.5, 9.3, 2.3, 0, Math.PI * 2); ctx.fill();
+    }
     ctx.restore();
     // 炮塔贴图（损坏时炮管歪斜）+ 炮管（长度与子弹出生点一致）
     ctx.save();
     ctx.translate(t.x, t.y);
     ctx.rotate(t.ta + (t.prt && !t.prt[1] ? 0.5 : 0));
-    const turImg = TANK_IMAGES[({ ru: 'ruTurret', jp: 'jpTurret' }[t.ty] || 'usTurret')];
+    const turImg = TANK_IMAGES[({ ru: 'ruTurret', jp: 'jpTurret', il: 'ilTurret', cn: 'cnTurret', de: 'deTurret' }[t.ty] || 'usTurret')];
     if (turImg) {
       // 炮塔本体（大炮塔：40x37 盖住车体大半，不含炮管）
       ctx.imageSmoothingEnabled = false;
@@ -1539,7 +1915,7 @@
       const div = document.createElement('div');
       div.className = 'plrow' + (p.host ? ' host' : '');
       const color = PALETTE[hashId(p.id) % PALETTE.length];
-      const tIcon = p.type === 'ru' ? '🇷🇺' : (p.type === 'jp' ? '🇯🇵' : '🇺🇸');
+      const tIcon = p.type === 'ru' ? '🇷🇺' : (p.type === 'jp' ? '🇯🇵' : (p.type === 'il' ? '🇮🇱' : (p.type === 'cn' ? '🇨🇳' : (p.type === 'de' ? '🇪🇺' : '🇺🇸'))));
       div.innerHTML = '<span class="dot" style="background:' + color + '"></span>' + tIcon + ' ' +
         esc(p.name) + (p.host ? ' <span class="crown">👑</span>' : '') +
         (p.id === myId ? ' <span style="color:#4fc3f7;font-size:11px">(你)</span>' : '') +
@@ -1622,10 +1998,16 @@
     els.tpUs.classList.toggle('sel-us', type === 'us');
     els.tpRu.classList.toggle('sel-ru', type === 'ru');
     if (els.tpJp) els.tpJp.classList.toggle('sel-jp', type === 'jp');
+    if (els.tpIl) els.tpIl.classList.toggle('sel-il', type === 'il');
+    if (els.tpCn) els.tpCn.classList.toggle('sel-cn', type === 'cn');
+    if (els.tpDe) els.tpDe.classList.toggle('sel-de', type === 'de');
   }
   els.tpUs.addEventListener('click', () => pickTank('us'));
   els.tpRu.addEventListener('click', () => pickTank('ru'));
   if (els.tpJp) els.tpJp.addEventListener('click', () => pickTank('jp'));
+  if (els.tpIl) els.tpIl.addEventListener('click', () => pickTank('il'));
+  if (els.tpCn) els.tpCn.addEventListener('click', () => pickTank('cn'));
+  if (els.tpDe) els.tpDe.addEventListener('click', () => pickTank('de'));
   function leaveRoom() {
     intentionalClose = true;
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'leave' }));
@@ -1830,6 +2212,11 @@
         pb.pen += myTT.penGain;
         return pb.penBounces >= myTT.penBounceMax;
       }
+      if (myTT.penBounceMax && myTT.penDrop === 0) {
+        // 豹二：反弹不扣穿深，最多 2 次
+        pb.penBounces = (pb.penBounces || 0) + 1;
+        return pb.penBounces >= myTT.penBounceMax;
+      }
       pb.pen -= penDrop;
       return pb.pen <= 0;
     };
@@ -1934,7 +2321,7 @@
       if (!src || src.x == null || !src.alive) { p.render = null; continue; }
       seen.add(p.id);
       if (p.id === myId && selfPos) {
-        p.render = { x: selfPos.x, y: selfPos.y, a: selfPos.a, ta: autoTurret ? selfPos.a : mouseAngle, hp: selfHp, shd: selfBuffs.shd, ty: selfType, prt: [selfParts.track, selfParts.turret, selfParts.engine, selfParts.ammo, selfParts.optics, selfParts.loader], fr: selfFire, am: selfAmFire ? 1 : 0 };
+        p.render = { x: selfPos.x, y: selfPos.y, a: selfPos.a, ta: autoTurret ? selfPos.a : mouseAngle, hp: selfHp, shd: selfBuffs.shd, ty: selfType, prt: [selfParts.track, selfParts.turret, selfParts.engine, selfParts.ammo, selfParts.optics, selfParts.loader], fr: selfFire, am: selfAmFire ? 1 : 0, mt: selfMortar, ag: selfAg, jm: selfJm ? 1 : 0 };
       } else {
         const from = pa || src;
         const to = pb || src;
@@ -1950,6 +2337,9 @@
           fr: to.fr || 0,
           am: to.am || 0,
           ty: to.ty || 'us',
+          mt: to.mt || 0,
+          ag: to.ag || 0,
+          jm: to.jm || 0,
         };
       }
     }
