@@ -841,6 +841,7 @@ function startRound(room) {
   broadcastRoom(room);
 }
 
+// render-restart-2026 placeholder
 // ---------------- 物理与战斗 ----------------
 function collideTankWorld(tk, obstacles) {
   // 世界墙：固定外接半轴（不随朝向突变，稳定）
