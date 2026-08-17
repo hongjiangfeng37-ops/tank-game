@@ -69,8 +69,9 @@
     ru: { name: '俄军 T90A', reload: 6, eraMax: 500, pen: 750, penDrop: 200, armor: '800/300/700', armorEra: '1200/1100/700', color: '#5f7a52' },
     jp: { name: '日军 90式主战坦克', reload: 3, eraMax: 200, pen: 500, penGain: 200, penBounceMax: 9, armor: '550/150/250', armorEra: '800/400/500', color: '#7a6a4a' },
     il: { name: '以军 梅卡瓦Mk4', reload: 4.5, eraMax: 200, pen: 550, penDrop: 100, armor: '600+200机/250+200机/450+200机', armorEra: '850+200机/800+200机/450+200机', color: '#8a9a6a', mortar: true },
-    cn: { name: '中国 99B主战坦克', reload: 5, eraMax: 400, pen: 850, penDrop: 50, armor: '1000/150/650', armorEra: '1450/600/1100', color: '#c9b27c', aps: true },
+    cn: { name: '中国 99B主战坦克', reload: 5, eraMax: 400, pen: 900, penDrop: 50, armor: '1000/150/650', armorEra: '1450/600/1100', color: '#c9b27c', aps: true },
     de: { name: '欧盟 豹二A6主战坦克', reload: 5, eraMax: 300, pen: 800, penDrop: 0, penBounceMax: 2, armor: '600/200/400', armorEra: '900/800/400', color: '#7a8a5a' },
+    hj10: { name: '中国 红箭10导弹车', reload: 15, eraMax: 0, pen: 2000, penDrop: 0, mag: 2, armor: '200/200/200', armorEra: '200/200/200', color: '#c9b27c', instaKill: true, noBounce: true, hjSpeed: 900 },
   };
   const PALETTE = ['#ff5d5d', '#4fc3f7', '#66bb6a', '#ffee58', '#ff8a65', '#ba68c8', '#4dd0e1', '#f06292', '#aed581', '#90a4ae'];
   const PUP_COLOR = { health: '#4caf50', shield: '#4dd0e1', rapid: '#ffca28', triple: '#ff7043', atgm: '#ff7043' };
@@ -91,7 +92,7 @@
     pingText: $('pingText'), btnMute: $('btnMute'), btnLeave: $('btnLeave'), btnPub: $('btnPub'),
     countdown: $('countdown'), banner: $('banner'), killfeed: $('killfeed'),
     hud: $('hud'), hpBar: $('hpBar'), hpText: $('hpText'), ammoBox: $('ammoBox'), eraBox: $('eraBox'), buffs: $('buffs'), wepBox: $('wepBox'), wepText: $('wepText'), wepBar: $('wepBar'),
-    tpUs: $('tp-us'), tpRu: $('tp-ru'), tpJp: $('tp-jp'), tpIl: $('tp-il'), tpCn: $('tp-cn'), tpDe: $('tp-de'),
+    tpUs: $('tp-us'), tpRu: $('tp-ru'), tpJp: $('tp-jp'), tpIl: $('tp-il'), tpCn: $('tp-cn'), tpDe: $('tp-de'), tpHj: $('tp-hj'),
     partTrack: $('part-track'), partTurret: $('part-turret'), partEngine: $('part-engine'),
     partAmmo: $('part-ammo'), partOptics: $('part-optics'),
     repairBar: $('repairBar'), damageNote: $('damageNote'),
@@ -170,6 +171,7 @@
   let selfMortar = 0;           // 梅卡瓦迫击炮冷却剩余秒（0=就绪）
   let selfAg = 0;               // 反坦克导弹持有数
   let selfJm = 0;               // 自己被窗帘干扰
+  let selfShtoraCd = 0;         // T90A 干扰冷却剩余（20s 满=可用）
   let mortarMode = false;       // 梅卡瓦当前火炮模式：false=主炮 true=迫击炮
   let selfApsN = 0;             // 99B 主动防御充能
   let selfApsOn = 0;            // 主动防御激活剩余秒
@@ -424,7 +426,7 @@
     selfHp = me.hp;
     selfBuffs = { shd: me.shd, rap: me.rap, trp: me.trp };
     // 弹药校正：与服务器偏差过大时以服务器为准
-    if (me.mag != null && Math.abs(me.mag - localMag) > 2) localMag = me.mag;
+    if (me.mag != null) localMag = me.mag; // 弹匣同步（服务器权威；红箭10 两连发开局 2 发）
     // 部件状态同步（服务器权威）
     if (Array.isArray(me.prt)) {
       selfParts.track = me.prt[0];
@@ -439,6 +441,7 @@
       selfMortar = me.mc || 0;   // 迫击炮冷却剩余秒（30s 满=就绪）
       selfAg = me.ag || 0;       // 反坦克导弹
       selfJm = me.jm || 0;       // 被窗帘干扰
+      selfShtoraCd = me.sj || 0; // T90A 干扰冷却剩余（20s 满=可用）
       selfApsN = me.ap || 0;     // 主动防御充能
       selfApsOn = me.apo || 0;   // 主动防御激活剩余
       selfApsCd = me.apc || 0;   // 主动防御冷却剩余
@@ -949,6 +952,21 @@
     let hasOwnServerBullet = false;
     for (const b of bullets) {
       if (b.o === myId) hasOwnServerBullet = true;
+      if (b.hj) {
+        // 红箭10 反坦克导弹：超长拖尾 + 亮色弹头 + 尾焰
+        const tx = b.x - b.vx * 0.16, ty = b.y - b.vy * 0.16;
+        ctx.strokeStyle = 'rgba(255, 90, 40, 0.85)';
+        ctx.lineWidth = 3.5;
+        ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(b.x, b.y); ctx.stroke();
+        ctx.strokeStyle = 'rgba(255, 180, 90, 0.35)';
+        ctx.lineWidth = 8;
+        ctx.beginPath(); ctx.moveTo(b.x - b.vx * 0.08, b.y - b.vy * 0.08); ctx.lineTo(b.x, b.y); ctx.stroke();
+        ctx.fillStyle = '#ffd9a0';
+        ctx.beginPath(); ctx.arc(b.x, b.y, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(255, 160, 70, 0.5)';
+        ctx.beginPath(); ctx.arc(b.x, b.y, 10, 0, Math.PI * 2); ctx.fill();
+        continue;
+      }
       if (b.ag) {
         // 反坦克导弹：慢速长条 + 尾焰
         const tx = b.x - b.vx * 0.12, ty = b.y - b.vy * 0.12;
@@ -972,6 +990,18 @@
     }
     for (const pb of predBullets) {
       if (hasOwnServerBullet) break; // 服务器快照已接管自机炮弹，预测弹不再画（避免双弹）
+      if (pb.isHj) {
+        // 红箭10 预测弹：超长拖尾
+        const tx = pb.x - pb.vx * 0.16, ty = pb.y - pb.vy * 0.16;
+        ctx.strokeStyle = 'rgba(255, 90, 40, 0.85)';
+        ctx.lineWidth = 3.5;
+        ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(pb.x, pb.y); ctx.stroke();
+        ctx.fillStyle = '#ffd9a0';
+        ctx.beginPath(); ctx.arc(pb.x, pb.y, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(255, 160, 70, 0.5)';
+        ctx.beginPath(); ctx.arc(pb.x, pb.y, 10, 0, Math.PI * 2); ctx.fill();
+        continue;
+      }
       const tx = pb.x - pb.vx * 0.045, ty = pb.y - pb.vy * 0.045;
       ctx.strokeStyle = 'rgba(255, 235, 170, 0.7)';
       ctx.lineWidth = 2.5;
@@ -1594,6 +1624,63 @@
       '<line x1="15" y1="10" x2="5" y2="3" stroke="#18191c" stroke-width="1.1"/>' +
       '<rect x="7" y="30" width="5.5" height="7" rx="1" fill="#2e3034" stroke="#18191c" stroke-width="0.8"/>' +
       '</svg>',
+    // 中国 红箭10导弹车车体：军绿迷彩履带底盘，后部（左）为发射架安装平台，前部驾驶舱
+    hj10Body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 84">' +
+      '<defs><linearGradient id="hjb" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0" stop-color="#5a6846"/><stop offset="0.5" stop-color="#475434"/><stop offset="1" stop-color="#36402a"/>' +
+      '</linearGradient></defs>' +
+      // 履带 + 履带齿
+      '<rect x="3" y="3" width="94" height="13" rx="6" fill="#14170f"/>' +
+      '<rect x="3" y="68" width="94" height="13" rx="6" fill="#14170f"/>' +
+      '<line x1="8" y1="9.5" x2="97" y2="9.5" stroke="#0a0c06" stroke-width="4" stroke-dasharray="2.6 4.4"/>' +
+      '<line x1="8" y1="74.5" x2="97" y2="74.5" stroke="#0a0c06" stroke-width="4" stroke-dasharray="2.6 4.4"/>' +
+      // 侧裙板上缘
+      '<rect x="5" y="17" width="90" height="3.5" fill="#2a3026"/>' +
+      '<rect x="5" y="63.5" width="90" height="3.5" fill="#2a3026"/>' +
+      // 车体主体（矩形底盘，前后同宽——导弹车特征）
+      '<path d="M14,19 L96,19 Q100,19 100,25 L100,59 Q100,65 96,65 L14,65 L7,56 L7,28 Z" fill="url(#hjb)" stroke="#20271a" stroke-width="1.5"/>' +
+      // 军绿迷彩斑（黑 + 沙）
+      '<path d="M40,21 L58,21 L54,32 L36,32 Z" fill="#2c3324"/>' +
+      '<path d="M70,20 L88,20 L84,30 L68,30 Z" fill="#6b5a3a"/>' +
+      '<path d="M22,44 L40,44 L37,58 L19,58 Z" fill="#6b5a3a"/>' +
+      '<path d="M62,44 L80,44 L76,58 L58,58 Z" fill="#2c3324"/>' +
+      '<path d="M44,22 L56,22 L54,30 L42,30 Z" fill="#39452b"/>' +
+      // 后部发射架安装平台（左端凹台，比车体稍窄，颜色略深）
+      '<path d="M14,21 L44,21 L38,63 L14,63 L8,55 L8,29 Z" fill="#3d4a34" stroke="#20271a" stroke-width="1"/>' +
+      '<line x1="10" y1="26" x2="42" y2="26" stroke="#20271a" stroke-width="0.8" opacity="0.5"/>' +
+      '<line x1="10" y1="58" x2="42" y2="58" stroke="#20271a" stroke-width="0.8" opacity="0.5"/>' +
+      // 前部（右）驾驶舱盖 + 引擎格栅
+      '<path d="M78,21 L95,21 Q98,21 98,25 L98,59 Q98,63 95,63 L78,63 L70,42 Z" fill="#4c5a3c" stroke="#20271a" stroke-width="1"/>' +
+      '<rect x="80" y="24" width="13" height="10" rx="1.5" fill="#36402a" stroke="#20271a" stroke-width="0.9"/>' +
+      '<line x1="82" y1="27" x2="91" y2="27" stroke="#20271a" stroke-width="0.9"/>' +
+      '<line x1="82" y1="30" x2="91" y2="30" stroke="#20271a" stroke-width="0.9"/>' +
+      // 前灯
+      '<circle cx="97.5" cy="27" r="1.8" fill="#ffe9a3"/>' +
+      '<circle cx="97.5" cy="57" r="1.8" fill="#ffe9a3"/>' +
+      '</svg>',
+    // 中国 红箭10导弹车发射架（炮塔）：短小、位于车体后部（贴图左半）、左右两根平行发射管朝车头伸出
+    hj10Turret: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 52">' +
+      '<defs><linearGradient id="hjt" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0" stop-color="#4c5a3c"/><stop offset="1" stop-color="#2f3a26"/>' +
+      '</linearGradient></defs>' +
+      // 第1层：短小发射架底座（贴图左半 = 车体后部安装位）
+      '<path d="M30,13 L24,8 L10,8 L5,14 L5,38 L10,44 L24,44 L30,39 Z" fill="url(#hjt)" stroke="#20271a" stroke-width="1.5"/>' +
+      // 第2层：底座顶面板
+      '<path d="M27,15 L23,11 L12,11 L8,15 L8,37 L12,41 L23,41 L27,37 Z" fill="#42502f" stroke="#20271a" stroke-width="1"/>' +
+      // 第3层：左右两根平行发射管（朝车头方向伸出，管箱式）
+      '<path d="M28,15 L44,15 L46,19 L46,23 L44,27 L28,27 L26,21 Z" fill="#3d4a34" stroke="#20271a" stroke-width="1.2"/>' +
+      '<path d="M28,25 L44,25 L46,29 L46,33 L44,37 L28,37 L26,31 Z" fill="#3d4a34" stroke="#20271a" stroke-width="1.2"/>' +
+      // 管口（深色圆孔，导弹发射口）
+      '<ellipse cx="45.5" cy="21" rx="1.6" ry="3.4" fill="#14170f"/>' +
+      '<ellipse cx="45.5" cy="31" rx="1.6" ry="3.4" fill="#14170f"/>' +
+      // 管身加强箍
+      '<line x1="34" y1="14.5" x2="34" y2="27.5" stroke="#20271a" stroke-width="0.8"/>' +
+      '<line x1="34" y1="24.5" x2="34" y2="37.5" stroke="#20271a" stroke-width="0.8"/>' +
+      // 底座设备：观瞄镜、天线
+      '<rect x="16" y="13" width="5" height="3.2" rx="0.8" fill="#1c2415" stroke="#20271a" stroke-width="0.7"/>' +
+      '<rect x="17" y="13.8" width="3" height="1.6" rx="0.6" fill="#5a6e45"/>' +
+      '<line x1="10" y1="10" x2="3" y2="3" stroke="#20271a" stroke-width="1.1"/>' +
+      '</svg>',
   };
   const TANK_IMAGES = {};
   (function loadTankImages() {
@@ -1615,7 +1702,7 @@
     ctx.save();
     ctx.translate(t.x, t.y);
     ctx.rotate(t.a);
-    const bodyImg = TANK_IMAGES[({ ru: 'ruBody', jp: 'jpBody', il: 'ilBody', cn: 'cnBody', de: 'deBody' }[t.ty] || 'usBody')];
+    const bodyImg = TANK_IMAGES[({ ru: 'ruBody', jp: 'jpBody', il: 'ilBody', cn: 'cnBody', de: 'deBody', hj10: 'hj10Body' }[t.ty] || 'usBody')];
     if (bodyImg) {
       // 车体铺满碰撞盒 52x44
       ctx.imageSmoothingEnabled = false;
@@ -1648,7 +1735,7 @@
     ctx.save();
     ctx.translate(t.x, t.y);
     ctx.rotate(t.ta + (t.prt && !t.prt[1] ? 0.5 : 0));
-    const turImg = TANK_IMAGES[({ ru: 'ruTurret', jp: 'jpTurret', il: 'ilTurret', cn: 'cnTurret', de: 'deTurret' }[t.ty] || 'usTurret')];
+    const turImg = TANK_IMAGES[({ ru: 'ruTurret', jp: 'jpTurret', il: 'ilTurret', cn: 'cnTurret', de: 'deTurret', hj10: 'hj10Turret' }[t.ty] || 'usTurret')];
     if (turImg) {
       // 炮塔本体（大炮塔：40x37 盖住车体大半，不含炮管）
       ctx.imageSmoothingEnabled = false;
@@ -1869,6 +1956,9 @@
     if (localReload > 0) {
       els.ammoBox.textContent = '装填中 ' + Math.ceil(localReload) + 's';
       els.ammoBox.classList.add('reloading');
+    } else if (selfType === 'hj10') {
+      els.ammoBox.textContent = '🚀 导弹 x' + localMag;
+      els.ammoBox.classList.remove('reloading');
     } else {
       els.ammoBox.textContent = '🔫 已装填';
       els.ammoBox.classList.remove('reloading');
@@ -1896,6 +1986,20 @@
       els.wepBar.firstChild.style.width = (ready ? 100 : cdPct) + '%';
       els.wepBar.firstChild.style.background = ready ? '#66bb6a' : '#ff5252';
       els.wepBox.style.borderColor = ready ? '#66bb6a' : '#ff5252';
+    } else if (selfType === 'ru') {
+      // T90A 窗帘干扰：干扰一次后冷却 20s（进度条）
+      els.wepBox.classList.remove('hidden');
+      if (selfShtoraCd > 0) {
+        els.wepText.textContent = '📡 干扰冷却 ' + Math.ceil(selfShtoraCd) + 's';
+        els.wepBar.firstChild.style.width = Math.round((1 - selfShtoraCd / 20) * 100) + '%';
+        els.wepBar.firstChild.style.background = '#ff5252';
+        els.wepBox.style.borderColor = '#ff5252';
+      } else {
+        els.wepText.textContent = '📡 干扰就绪（前方扇形自动触发）';
+        els.wepBar.firstChild.style.width = '100%';
+        els.wepBar.firstChild.style.background = '#66bb6a';
+        els.wepBox.style.borderColor = '#66bb6a';
+      }
     } else if (selfType === 'cn') {
       els.wepBox.classList.remove('hidden');
       if (selfApsOn > 0) {
@@ -2004,7 +2108,7 @@
       const div = document.createElement('div');
       div.className = 'plrow' + (p.host ? ' host' : '');
       const color = PALETTE[hashId(p.id) % PALETTE.length];
-      const tIcon = p.type === 'ru' ? '🇷🇺' : (p.type === 'jp' ? '🇯🇵' : (p.type === 'il' ? '🇮🇱' : (p.type === 'cn' ? '🇨🇳' : (p.type === 'de' ? '🇪🇺' : '🇺🇸'))));
+      const tIcon = p.type === 'ru' ? '🇷🇺' : (p.type === 'jp' ? '🇯🇵' : (p.type === 'il' ? '🇮🇱' : (p.type === 'cn' || p.type === 'hj10' ? '🇨🇳' : (p.type === 'de' ? '🇪🇺' : '🇺🇸'))));
       div.innerHTML = '<span class="dot" style="background:' + color + '"></span>' + tIcon + ' ' +
         esc(p.name) + (p.host ? ' <span class="crown">👑</span>' : '') +
         (p.id === myId ? ' <span style="color:#4fc3f7;font-size:11px">(你)</span>' : '') +
@@ -2087,8 +2191,9 @@
     ru: '<b>🇷🇺 俄军 T90A</b>　<span class="ti-spec">穿深750(反弹-200)｜装甲800/300/700｜爆反+500｜装填6s</span><br>📡 窗帘干扰：炮塔前方扇形打断迫击炮锁定/导弹原路返回（红眼发光警示）｜侧面弹药架（爆反≥30%保护）',
     jp: '<b>🇯🇵 日军 90式</b>　<span class="ti-spec">穿深500(反弹+200)｜装甲550/150/250｜爆反+200｜装填3s</span><br>💥 反弹穿深递增最多9次｜尾舱殉爆+前置弹药架起火(50%)',
     il: '<b>🇮🇱 以军 梅卡瓦Mk4</b>　<span class="ti-spec">穿深550｜装甲600/250/450(发动机+200)｜爆反+200｜装填4.5s</span><br>🔧 发动机前置装甲加成｜弹药架只起火不殉爆｜炮塔坏连带起火｜💣 迫击炮(静止3s锁定扣30%爆反，1/2键切换)',
-    cn: '<b>🇨🇳 中国 99B</b>　<span class="ti-spec">穿深850(反弹-50)｜装甲1000/150/650｜爆反+450｜装填5s</span><br>🛡️ 主动防御E(2次抵挡/60s恢复，炮塔坏失效)｜侧面弹药架必殉爆｜全场最快',
+    cn: '<b>🇨🇳 中国 99B</b>　<span class="ti-spec">穿深900(反弹-50)｜装甲1000/150/650｜爆反+450｜装填5s</span><br>🛡️ 主动防御E(2次抵挡/60s恢复，炮塔坏失效)｜侧面弹药架必殉爆｜全场最快',
     de: '<b>🇪🇺 欧盟 豹二A6</b>　<span class="ti-spec">穿深800(反弹不扣)｜装甲600/200/400｜爆反+300｜装填5s</span><br>💥 反弹不扣穿深但仅2次｜尾舱殉爆+前置弹药架起火',
+    hj10: '<b>🇨🇳 中国 红箭10导弹车</b>　<span class="ti-spec">穿深2000打中就死｜装甲200/200/200｜无爆反｜装填15s(两连发)</span><br>🚀 给他们共和国震撼！让西方朋友上市！',
   };
   const tankInfoEl = document.getElementById('tankInfo');
   function showTankInfo(type) {
@@ -2101,6 +2206,7 @@
     if (els.tpJp) els.tpJp.classList.toggle('sel-jp', type === 'jp');
     if (els.tpIl) els.tpIl.classList.toggle('sel-il', type === 'il');
     if (els.tpCn) els.tpCn.classList.toggle('sel-cn', type === 'cn');
+    if (els.tpHj) els.tpHj.classList.toggle('sel-cn', type === 'hj10');
     if (els.tpDe) els.tpDe.classList.toggle('sel-de', type === 'de');
     showTankInfo(type);
   }
@@ -2109,6 +2215,7 @@
   if (els.tpJp) els.tpJp.addEventListener('click', () => pickTank('jp'));
   if (els.tpIl) els.tpIl.addEventListener('click', () => pickTank('il'));
   if (els.tpCn) els.tpCn.addEventListener('click', () => pickTank('cn'));
+  if (els.tpHj) els.tpHj.addEventListener('click', () => pickTank('hj10'));
   if (els.tpDe) els.tpDe.addEventListener('click', () => pickTank('de'));
   showTankInfo('us'); // 默认展示美军介绍
   function leaveRoom() {
@@ -2274,11 +2381,11 @@
     // 输入发送 / 本地预测
     resize();
     sendInput(now);
-    // 弹药本地模拟（单发制：开火后进入装填，服务器快照校正）
+    // 弹药本地模拟（单发制；红箭10 两连发：打一发留一发，打完才装填，服务器快照校正）
     localFireCd -= dt;
     if (localReload > 0) {
       localReload -= dt;
-      if (localReload <= 0) localMag = MAG_SIZE;
+      if (localReload <= 0) localMag = (TANK_TYPES[selfType] && TANK_TYPES[selfType].mag) || MAG_SIZE;
     }
     const inpNow = currentInput();
     // 迫击炮模式：本地预测弹（穿墙、慢速），30s 冷却由服务器控制（mc），此处只做即时视觉反馈
@@ -2293,20 +2400,22 @@
     }
     if (phase === 'play' && selfAlive && selfParts.turret && !mortarMode && inpNow.shoot && localFireCd <= 0 && localMag > 0) {
       localFireCd = 0.25;
-      localMag = 0;
+      localMag = Math.max(0, localMag - 1); // 弹匣递减（红箭10 两连发）
       let reload = TANK_TYPES[selfType].reload;
       if (selfType === 'ru' && !selfParts.loader) reload *= 2; // 俄军装弹机损坏；美军无装弹机
       if (selfBuffs.rap > 0) reload *= 0.5;
-      localReload = reload;
+      if (localMag === 0) localReload = reload; // 弹匣打空才开始装填
       // 本地子弹预测：立即显示自己发射的子弹（不等服务器往返），穿深与服务器一致
       if (pred) {
         const ta = autoTurret ? pred.a : mouseAngle;
-        const spd = 620;
-        const tt = TANK_TYPES[selfType] || TANK_TYPES.us;
+        const hjt = TANK_TYPES[selfType] || TANK_TYPES.us;
+        const spd = hjt.hjSpeed || 620;
+        const tt = hjt;
         predBullets.push({
           x: pred.x + Math.cos(ta) * 34, y: pred.y + Math.sin(ta) * 34,
           vx: Math.cos(ta) * spd, vy: Math.sin(ta) * spd,
           pen: tt.pen, t: performance.now(),
+          isHj: !!hjt.instaKill, // 红箭10：极快、不可反弹、撞墙消失
         });
         if (selfBuffs.trp > 0) {
           predBullets.push({ x: pred.x + Math.cos(ta - 0.18) * 34, y: pred.y + Math.sin(ta - 0.18) * 34, vx: Math.cos(ta - 0.18) * spd, vy: Math.sin(ta - 0.18) * spd, pen: tt.pen, t: performance.now() });
@@ -2357,14 +2466,15 @@
         }
       }
       if (hitTank) { predBullets.splice(i, 1); continue; }
-      // 世界墙反弹（与服务器同：反弹扣穿深，扣完消失；迫击炮弹穿墙）
+      // 世界墙反弹（与服务器同：反弹扣穿深，扣完消失；迫击炮弹穿墙；红箭10 撞墙消失）
       let bounced = false;
-      if (!pb.isMortar && pb.x < WALL_T + 5) { pb.x = WALL_T + 5; pb.vx = -pb.vx; bounced = true; }
-      else if (!pb.isMortar && pb.x > WORLD.w - WALL_T - 5) { pb.x = WORLD.w - WALL_T - 5; pb.vx = -pb.vx; bounced = true; }
-      if (!bounced && !pb.isMortar && pb.y < WALL_T + 5) { pb.y = WALL_T + 5; pb.vy = -pb.vy; bounced = true; }
-      else if (!bounced && !pb.isMortar && pb.y > WORLD.h - WALL_T - 5) { pb.y = WORLD.h - WALL_T - 5; pb.vy = -pb.vy; bounced = true; }
-      // 障碍反弹：线段检测（与服务器 segRectHit 一致，反弹轨迹完整；迫击炮弹穿墙）
-      if (!bounced && !pb.isMortar) {
+      if (pb.isHj && (pb.x < WALL_T || pb.x > WORLD.w - WALL_T || pb.y < WALL_T || pb.y > WORLD.h - WALL_T)) { predBullets.splice(i, 1); continue; }
+      if (!pb.isMortar && !pb.isHj && pb.x < WALL_T + 5) { pb.x = WALL_T + 5; pb.vx = -pb.vx; bounced = true; }
+      else if (!pb.isMortar && !pb.isHj && pb.x > WORLD.w - WALL_T - 5) { pb.x = WORLD.w - WALL_T - 5; pb.vx = -pb.vx; bounced = true; }
+      if (!bounced && !pb.isMortar && !pb.isHj && pb.y < WALL_T + 5) { pb.y = WALL_T + 5; pb.vy = -pb.vy; bounced = true; }
+      else if (!bounced && !pb.isMortar && !pb.isHj && pb.y > WORLD.h - WALL_T - 5) { pb.y = WORLD.h - WALL_T - 5; pb.vy = -pb.vy; bounced = true; }
+      // 障碍反弹：线段检测（与服务器 segRectHit 一致，反弹轨迹完整；迫击炮弹穿墙；红箭10 撞墙消失）
+      if (!bounced && !pb.isMortar && !pb.isHj) {
         for (const o of mapObstacles) {
           const hit = segRectHit(px0, py0, pb.x, pb.y, o);
           if (hit) {
@@ -2382,10 +2492,11 @@
       if (bounced) {
         if (bouncePen(pb)) { predBullets.splice(i, 1); continue; }
       }
-      // 兜底：子弹中心进入障碍内部（反弹后贴墙/擦角）→ 按最近表面推出（与服务器一致，杜绝穿墙；迫击炮跳过）
+      // 兜底：子弹中心进入障碍内部（反弹后贴墙/擦角）→ 按最近表面推出（与服务器一致，杜绝穿墙；迫击炮跳过；红箭10 撞墙消失）
       if (!bounced && !pb.isMortar) {
         for (const o of mapObstacles) {
           if (pb.x > o.x && pb.x < o.x + o.w && pb.y > o.y && pb.y < o.y + o.h) {
+            if (pb.isHj) { predBullets.splice(i, 1); break; } // 红箭10 撞墙消失
             const dl = pb.x - o.x, dr = o.x + o.w - pb.x;
             const dt = pb.y - o.y, db = o.y + o.h - pb.y;
             const min = Math.min(dl, dr, dt, db);
