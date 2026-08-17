@@ -192,6 +192,9 @@ button.mini:hover { border-color: #4fc3f7; }
 .tpCard.sel-us { border-color: #4caf50; background: rgba(76, 175, 80, 0.12); }
 .tpCard.sel-ru { border-color: #ff7043; background: rgba(255, 112, 67, 0.12); }
 .tpCard.sel-jp { border-color: #e0b84c; background: rgba(224, 184, 76, 0.12); }
+.tpCard.sel-il { border-color: #4dd0e1; background: rgba(77, 208, 225, 0.12); }
+.tpCard.sel-cn { border-color: #ffd54f; background: rgba(255, 213, 79, 0.12); }
+.tpCard.sel-de { border-color: #90a4ae; background: rgba(144, 164, 174, 0.12); }
 .tpName { font-size: 14px; font-weight: bold; color: #fff; }
 .tpSpec { color: #7e92b8; line-height: 1.5; }
 #lobbyHint { font-size: 12px; color: #7e92b8; margin-top: 10px; }
@@ -279,6 +282,22 @@ body.touch #btnFire { display: flex; }
   align-items: center; justify-content: center; touch-action: none; user-select: none;
 }
 body.touch #btnLayoutGame { display: flex; }
+
+/* ---------- 梅卡瓦迫击炮切换 + 反坦克导弹键 ---------- */
+#btnMortarMode, #btnAtgm, #btnAps {
+  position: fixed; right: 14px; width: 50px; height: 50px; border-radius: 50%;
+  background: rgba(22, 35, 61, 0.65); border: 2px solid rgba(255, 255, 255, 0.35); color: #fff;
+  font-size: 18px; z-index: 11; display: none;
+  align-items: center; justify-content: center; touch-action: none; user-select: none;
+}
+#btnMortarMode { top: 142px; border-color: rgba(255, 112, 67, 0.6); }
+#btnMortarMode.on { background: rgba(255, 112, 67, 0.5); border-color: #ff7043; }
+#btnAtgm { top: 202px; border-color: rgba(255, 213, 79, 0.6); }
+#btnAps { top: 262px; border-color: rgba(77, 208, 225, 0.6); }
+#btnAps.on { background: rgba(77, 208, 225, 0.45); border-color: #4dd0e1; }
+body.touch #btnMortarMode.show { display: flex; }
+body.touch #btnAtgm.show { display: flex; }
+body.touch #btnAps.show { display: flex; }
 #rotHint {
   position: fixed; inset: 0; z-index: 40; display: none; flex-direction: column;
   align-items: center; justify-content: center; gap: 8px;
