@@ -74,3 +74,5 @@ node test-facing-render.js  # 朝向+迷雾（无 CDP，Edge headless ?facing=1�
 
 - 无（当前用户反馈已全部处理）
 - 用户偏好：中文回复、简洁不道歉、不乱删东西
+
+- redeploy trigger: index.html UTF-8 fix c56f2e5 (Render 未自动部署，强制触发)
