@@ -79,7 +79,7 @@ const TANK_TYPES = {
     hasLoader: true,    // 自动装弹机：损坏后装填时间翻倍
   },
   jp: {
-    name: '日军 90式主战坦克', maxSpeed: 245, back: 0.6, reload: 5,
+    name: '日军 90式主战坦克', maxSpeed: 245, back: 0.6, reload: 3,
     era: 200,                                       // 爆反血量（用户指定 200）
     armor: { front: 550, side: 150, back: 250 },    // 基础装甲
     armorEra: { front: 800, side: 400, back: 500 }, // 爆反生效时（每部位 +250）
