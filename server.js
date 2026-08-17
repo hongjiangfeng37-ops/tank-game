@@ -1206,8 +1206,8 @@ function sim(room, dt, now) {
     // 反弹穿深处理（普通扣穿深；90式反弹+100穿深，最多 9 次）
     const bDead = () => applyBouncePen(b, room);
 
-    // 反坦克导弹（ATGM）：慢速直线，撞墙/障碍即消失（不反弹）；进入 T90A 窗帘扇形 → 原路返回（干扰冷却中不生效）
-    if (!dead && b.isAtgm) {
+    // 反坦克导弹（ATGM）/ 红箭10导弹：进入 T90A 窗帘扇形 → 原路返回（干扰冷却中不生效）
+    if (!dead && (b.isAtgm || b.isHj)) {
       // 干扰检测：任一 T90A 炮塔前方扇形（±50°、700px）
       for (const p of alive) {
         const jt = TANK_TYPES[p.type];
