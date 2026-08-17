@@ -67,6 +67,7 @@
   const TANK_TYPES = {      // 客户端展示用（与 server.js 一致）
     us: { name: '美军 M1A1标题党', reload: 4, eraMax: 300, pen: 800, penDrop: 100, armor: '600/200/400', armorEra: '900/800/400', color: '#6b8e5a' },
     ru: { name: '俄军 T80U', reload: 6, eraMax: 500, pen: 750, penDrop: 200, armor: '800/250/700', armorEra: '1200/1050/700', color: '#5f7a52' },
+    jp: { name: '日军 90式主战坦克', reload: 5, eraMax: 200, pen: 500, penGain: 100, penBounceMax: 9, armor: '550/150/250', armorEra: '800/400/500', color: '#7a6a4a' },
   };
   const PALETTE = ['#ff5d5d', '#4fc3f7', '#66bb6a', '#ffee58', '#ff8a65', '#ba68c8', '#4dd0e1', '#f06292', '#aed581', '#90a4ae'];
   const PUP_COLOR = { health: '#4caf50', shield: '#4dd0e1', rapid: '#ffca28', triple: '#ff7043' };
@@ -87,7 +88,7 @@
     pingText: $('pingText'), btnMute: $('btnMute'), btnLeave: $('btnLeave'), btnPub: $('btnPub'),
     countdown: $('countdown'), banner: $('banner'), killfeed: $('killfeed'),
     hud: $('hud'), hpBar: $('hpBar'), hpText: $('hpText'), ammoBox: $('ammoBox'), eraBox: $('eraBox'), buffs: $('buffs'),
-    tpUs: $('tp-us'), tpRu: $('tp-ru'),
+    tpUs: $('tp-us'), tpRu: $('tp-ru'), tpJp: $('tp-jp'),
     partTrack: $('part-track'), partTurret: $('part-turret'), partEngine: $('part-engine'),
     partAmmo: $('part-ammo'), partOptics: $('part-optics'),
     repairBar: $('repairBar'), damageNote: $('damageNote'),
@@ -162,6 +163,7 @@
   let selfParts = { track: true, turret: true, engine: true, ammo: true, optics: true, loader: true }; // 本地部件状态
   let selfRepair = 0;           // 维修进度(秒)
   let selfFire = 0;             // 起火剩余秒数
+  let selfAmFire = 0;           // 弹药架起火标记（更剧烈特效）
   let selfType = 'us';          // 坦克型号
   let selfEra = 300;            // 反应装甲血量（服务器权威同步）
 
@@ -413,6 +415,7 @@
       selfParts.loader = me.prt[5] !== false;
       selfRepair = me.rp || 0;
       selfFire = me.fr || 0;
+      selfAmFire = me.am || 0;
       if (me.ty) selfType = me.ty;
       if (me.era != null) selfEra = me.era;
     }
@@ -474,7 +477,7 @@
           break;
         case 'fire':
           sfx.boom();
-          if (e.id === myId) showDamageNote('🔥 起火了！持续掉血', false);
+          if (e.id === myId) showDamageNote(e.am ? '💥 弹药架起火了！持续掉血' : '🔥 起火了！持续掉血', false);
           break;
         case 'kill':
           sfx.kill();
@@ -1100,6 +1103,73 @@
       '<line x1="12" y1="41" x2="6" y2="46.5" stroke="#2a3526" stroke-width="1.1" opacity="0.8"/>' +
       '<rect x="8" y="33" width="3.6" height="4.2" rx="0.8" fill="#3d4a34" stroke="#1b2214" stroke-width="0.8"/>' +
       '</svg>',
+    // 日军 90式车体：四四方方 + 自卫队三色迷彩（茶/绿/黑）斑块 + 尾部格栅
+    jpBody: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 84">' +
+      '<defs><linearGradient id="jpb" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0" stop-color="#51603f"/><stop offset="0.5" stop-color="#45523a"/><stop offset="1" stop-color="#37422c"/>' +
+      '</linearGradient></defs>' +
+      // 履带 + 履带齿
+      '<rect x="3" y="3" width="94" height="13" rx="6" fill="#14170f"/>' +
+      '<rect x="3" y="68" width="94" height="13" rx="6" fill="#14170f"/>' +
+      '<line x1="8" y1="9.5" x2="97" y2="9.5" stroke="#0a0c06" stroke-width="4" stroke-dasharray="2.6 4.4"/>' +
+      '<line x1="8" y1="74.5" x2="97" y2="74.5" stroke="#0a0c06" stroke-width="4" stroke-dasharray="2.6 4.4"/>' +
+      // 侧裙板上下缘
+      '<rect x="5" y="17" width="90" height="3.5" fill="#2a3026"/>' +
+      '<rect x="5" y="63.5" width="90" height="3.5" fill="#2a3026"/>' +
+      // 车体主体（四四方方，前缘斜削）
+      '<path d="M18,19 L96,19 Q100,19 100,25 L100,59 Q100,65 96,65 L18,65 L10,56 L10,28 Z" fill="url(#jpb)" stroke="#23291f" stroke-width="1.5"/>' +
+      // 三色迷彩斑块（茶色/黑色不规则多边形，自卫队标准涂装）
+      '<path d="M62,21 L80,21 L75,31 L57,31 Z" fill="#6b5a3a"/>' +
+      '<path d="M22,22 L40,22 L37,35 L19,35 Z" fill="#272d23"/>' +
+      '<path d="M82,22 L97,22 L97,31 L85,31 Z" fill="#6b5a3a"/>' +
+      '<path d="M19,49 L37,49 L40,62 L22,62 Z" fill="#6b5a3a"/>' +
+      '<path d="M80,49 L97,49 L97,60 L83,60 Z" fill="#272d23"/>' +
+      '<path d="M42,38 L58,38 L60,52 L43,52 Z" fill="#272d23"/>' +
+      '<path d="M58,44 L72,44 L70,56 L55,56 Z" fill="#6b5a3a"/>' +
+      // 前部楔形车头（方形斜削装甲）
+      '<path d="M58,21 L96,21 Q99,21 99,25 L99,59 Q99,63 96,63 L58,63 L44,42 Z" fill="#4a573e" stroke="#23291f" stroke-width="1"/>' +
+      // 尾部发动机格栅
+      '<rect x="12" y="25" width="9" height="34" rx="2" fill="#3a442e" stroke="#23291f" stroke-width="0.9"/>' +
+      '<line x1="12" y1="31.5" x2="21" y2="31.5" stroke="#23291f" stroke-width="0.9"/>' +
+      '<line x1="12" y1="38" x2="21" y2="38" stroke="#23291f" stroke-width="0.9"/>' +
+      '<line x1="12" y1="44.5" x2="21" y2="44.5" stroke="#23291f" stroke-width="0.9"/>' +
+      '<line x1="12" y1="51" x2="21" y2="51" stroke="#23291f" stroke-width="0.9"/>' +
+      // 前灯
+      '<circle cx="97.5" cy="27" r="1.8" fill="#ffe9a3"/>' +
+      '<circle cx="97.5" cy="57" r="1.8" fill="#ffe9a3"/>' +
+      '</svg>',
+    // 日军 90式炮塔：四四方方箱形 + 分层结构 + 三色迷彩
+    jpTurret: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 52">' +
+      '<defs><linearGradient id="jpt" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0" stop-color="#4d5a3c"/><stop offset="1" stop-color="#39432c"/>' +
+      '</linearGradient></defs>' +
+      // 第1层：方形炮塔主体（箱形，四四方方）
+      '<path d="M52,16 L44,7 L14,7 L6,16 L6,36 L14,45 L44,45 L52,36 Z" fill="url(#jpt)" stroke="#23291f" stroke-width="1.5"/>' +
+      // 第2层：顶部装甲面板（内缩方框，分层感）
+      '<path d="M48,18 L42,11 L17,11 L11,18 L11,34 L17,41 L42,41 L48,34 Z" fill="#4a573e" stroke="#23291f" stroke-width="1"/>' +
+      '<path d="M48,18 L17,11" stroke="#6d7a54" stroke-width="0.9" opacity="0.6"/>' +
+      // 迷彩斑块（炮塔面）
+      '<path d="M44,13 L50,20 L44,27 L38,20 Z" fill="#6b5a3a"/>' +
+      '<path d="M12,23 L21,23 L19,34 L10,32 Z" fill="#272d23"/>' +
+      '<path d="M30,35 L41,35 L38,43 L27,40 Z" fill="#6b5a3a"/>' +
+      // 第3层：方形炮盾（前尖根部）
+      '<path d="M47,20 L53,26 L47,32 L41,26 Z" fill="#3a442e" stroke="#23291f" stroke-width="1"/>' +
+      '<path d="M46,22 L51,26 L46,30 L43,26 Z" fill="#4a573e" stroke="#23291f" stroke-width="0.7"/>' +
+      // 第4层：双舱盖凸台（车长右前 + 炮手左前，90式特征）
+      '<circle cx="30" cy="19" r="5.6" fill="#3a442e" stroke="#23291f" stroke-width="1"/>' +
+      '<circle cx="30" cy="19" r="4.3" fill="#59684a" stroke="#23291f" stroke-width="1"/>' +
+      '<circle cx="30" cy="19" r="1.6" fill="#23291f"/>' +
+      '<circle cx="19" cy="21" r="4.3" fill="#3a442e" stroke="#23291f" stroke-width="1"/>' +
+      '<circle cx="19" cy="21" r="3.1" fill="#59684a" stroke="#23291f" stroke-width="1"/>' +
+      '<circle cx="19" cy="21" r="1.2" fill="#23291f"/>' +
+      // 第5层：设备（观瞄镜、周视镜、天线、后部储物箱）
+      '<rect x="38" y="10.5" width="6.5" height="3.6" rx="1" fill="#1c2415" stroke="#23291f" stroke-width="0.7"/>' +
+      '<rect x="39.2" y="11.4" width="4" height="1.8" rx="0.6" fill="#5a6e45"/>' +
+      '<circle cx="33.5" cy="27" r="2.6" fill="#1c2415" stroke="#23291f" stroke-width="0.8"/>' +
+      '<circle cx="33.5" cy="27" r="1.1" fill="#5a6e45"/>' +
+      '<line x1="14" y1="8" x2="4" y2="1" stroke="#23291f" stroke-width="1.1"/>' +
+      '<rect x="7.5" y="30" width="5.5" height="6.5" rx="1" fill="#3a442e" stroke="#23291f" stroke-width="0.8"/>' +
+      '</svg>',
   };
   const TANK_IMAGES = {};
   (function loadTankImages() {
@@ -1121,7 +1191,7 @@
     ctx.save();
     ctx.translate(t.x, t.y);
     ctx.rotate(t.a);
-    const bodyImg = t.ty === 'ru' ? TANK_IMAGES.ruBody : TANK_IMAGES.usBody;
+    const bodyImg = TANK_IMAGES[({ ru: 'ruBody', jp: 'jpBody' }[t.ty] || 'usBody')];
     if (bodyImg) {
       // 车体铺满碰撞盒 52x44
       ctx.imageSmoothingEnabled = false;
@@ -1154,7 +1224,7 @@
     ctx.save();
     ctx.translate(t.x, t.y);
     ctx.rotate(t.ta + (t.prt && !t.prt[1] ? 0.5 : 0));
-    const turImg = t.ty === 'ru' ? TANK_IMAGES.ruTurret : TANK_IMAGES.usTurret;
+    const turImg = TANK_IMAGES[({ ru: 'ruTurret', jp: 'jpTurret' }[t.ty] || 'usTurret')];
     if (turImg) {
       // 炮塔本体（大炮塔：40x37 盖住车体大半，不含炮管）
       ctx.imageSmoothingEnabled = false;
@@ -1206,13 +1276,38 @@
         life: 0.8, maxLife: 0.8, size: 4 + Math.random() * 4, color: '#555566',
       });
     }
-    // 起火：车体火焰
-    if (t.fr > 0 && Math.random() < 0.6) {
-      particles.push({
-        x: t.x + (Math.random() - 0.5) * 30, y: t.y + (Math.random() - 0.5) * 30,
-        vx: (Math.random() - 0.5) * 40, vy: -60 - Math.random() * 40,
-        life: 0.5, maxLife: 0.5, size: 6 + Math.random() * 6, color: Math.random() < 0.5 ? '#ff7043' : '#ffd54f',
-      });
+    // 起火：车体火焰（弹药架起火 am 更剧烈：大火柱 + 火星 + 黑烟）
+    if (t.fr > 0) {
+      if (t.am) {
+        // 弹药架起火：剧烈火焰特效
+        if (Math.random() < 0.9) {
+          particles.push({
+            x: t.x + (Math.random() - 0.5) * 20, y: t.y + (Math.random() - 0.5) * 20,
+            vx: (Math.random() - 0.5) * 60, vy: -110 - Math.random() * 60,
+            life: 0.7, maxLife: 0.7, size: 9 + Math.random() * 8, color: Math.random() < 0.6 ? '#ff5722' : '#ffb300',
+          });
+        }
+        if (Math.random() < 0.4) {
+          particles.push({ // 火星飞溅
+            x: t.x + (Math.random() - 0.5) * 26, y: t.y + (Math.random() - 0.5) * 26,
+            vx: (Math.random() - 0.5) * 160, vy: (Math.random() - 0.5) * 160 - 40,
+            life: 0.4, maxLife: 0.4, size: 2 + Math.random() * 2, color: '#fff3c0',
+          });
+        }
+        if (Math.random() < 0.5) {
+          particles.push({ // 黑烟柱
+            x: t.x + (Math.random() - 0.5) * 10, y: t.y + (Math.random() - 0.5) * 10,
+            vx: (Math.random() - 0.5) * 20, vy: -70 - Math.random() * 30,
+            life: 1.4, maxLife: 1.4, size: 12 + Math.random() * 10, color: '#2a2a2e',
+          });
+        }
+      } else if (Math.random() < 0.6) {
+        particles.push({
+          x: t.x + (Math.random() - 0.5) * 30, y: t.y + (Math.random() - 0.5) * 30,
+          vx: (Math.random() - 0.5) * 40, vy: -60 - Math.random() * 40,
+          life: 0.5, maxLife: 0.5, size: 6 + Math.random() * 6, color: Math.random() < 0.5 ? '#ff7043' : '#ffd54f',
+        });
+      }
     }
     // 血条 & 名字（观瞄损坏时无法识别敌方坦克名字）
     const bw = 46;
@@ -1506,9 +1601,11 @@
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'pick', type }));
     els.tpUs.classList.toggle('sel-us', type === 'us');
     els.tpRu.classList.toggle('sel-ru', type === 'ru');
+    if (els.tpJp) els.tpJp.classList.toggle('sel-jp', type === 'jp');
   }
   els.tpUs.addEventListener('click', () => pickTank('us'));
   els.tpRu.addEventListener('click', () => pickTank('ru'));
+  if (els.tpJp) els.tpJp.addEventListener('click', () => pickTank('jp'));
   function leaveRoom() {
     intentionalClose = true;
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'leave' }));
@@ -1702,8 +1799,20 @@
         }
       }
     }
-    // 推进/清理本地预测子弹（反弹几何与服务器一致：线段检测 + 穿深衰减，1.2 秒后服务器快照接管）
-    const penDrop = (TANK_TYPES[selfType] || TANK_TYPES.us).penDrop || 100;
+    // 推进/清理本地预测子弹（反弹几何与服务器一致：普通扣穿深，90式反弹+100 穿深最多 9 次）
+    const myTT = TANK_TYPES[selfType] || TANK_TYPES.us;
+    const penDrop = myTT.penDrop || 100;
+    const isJP = !!myTT.penGain;
+    // 反弹穿深处理（与服务器 applyBouncePen 一致）；返回 true = 子弹消失
+    const bouncePen = (pb) => {
+      if (isJP) {
+        pb.penBounces = (pb.penBounces || 0) + 1;
+        pb.pen += myTT.penGain;
+        return pb.penBounces >= myTT.penBounceMax;
+      }
+      pb.pen -= penDrop;
+      return pb.pen <= 0;
+    };
     for (let i = predBullets.length - 1; i >= 0; i--) {
       const pb = predBullets[i];
       const px0 = pb.x, py0 = pb.y;
@@ -1751,8 +1860,7 @@
         }
       }
       if (bounced) {
-        pb.pen -= penDrop;
-        if (pb.pen <= 0) { predBullets.splice(i, 1); continue; }
+        if (bouncePen(pb)) { predBullets.splice(i, 1); continue; }
       }
       // 兜底：子弹中心进入障碍内部（反弹后贴墙/擦角）→ 按最近表面推出（与服务器一致，杜绝穿墙）
       if (!bounced) {
@@ -1770,8 +1878,7 @@
             if (vn < 0) {
               pb.vx -= 2 * vn * nx;
               pb.vy -= 2 * vn * ny;
-              pb.pen -= penDrop;
-              if (pb.pen <= 0) { predBullets.splice(i, 1); continue; }
+              if (bouncePen(pb)) { predBullets.splice(i, 1); continue; }
             }
             break;
           }
@@ -1807,7 +1914,7 @@
       if (!src || src.x == null || !src.alive) { p.render = null; continue; }
       seen.add(p.id);
       if (p.id === myId && selfPos) {
-        p.render = { x: selfPos.x, y: selfPos.y, a: selfPos.a, ta: autoTurret ? selfPos.a : mouseAngle, hp: selfHp, shd: selfBuffs.shd, ty: selfType, prt: [selfParts.track, selfParts.turret, selfParts.engine, selfParts.ammo, selfParts.optics, selfParts.loader], fr: selfFire };
+        p.render = { x: selfPos.x, y: selfPos.y, a: selfPos.a, ta: autoTurret ? selfPos.a : mouseAngle, hp: selfHp, shd: selfBuffs.shd, ty: selfType, prt: [selfParts.track, selfParts.turret, selfParts.engine, selfParts.ammo, selfParts.optics, selfParts.loader], fr: selfFire, am: selfAmFire ? 1 : 0 };
       } else {
         const from = pa || src;
         const to = pb || src;
@@ -1821,6 +1928,7 @@
           shd: to.shd,
           prt: to.prt || [true, true, true, true, true, true],
           fr: to.fr || 0,
+          am: to.am || 0,
           ty: to.ty || 'us',
         };
       }
