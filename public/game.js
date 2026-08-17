@@ -173,6 +173,7 @@
   let selfJm = 0;               // 自己被窗帘干扰
   let selfShtoraCd = 0;         // T90A 干扰冷却剩余（20s 满=可用）
   let localHjSide = 0;          // 红箭10 左右发射架交替标记
+  const bulletRenders = new Map(); // 快照子弹插值状态（id → {x,y,tx,ty,...}）消除 30Hz 跳帧
   let mortarMode = false;       // 梅卡瓦当前火炮模式：false=主炮 true=迫击炮
   let selfApsN = 0;             // 99B 主动防御充能
   let selfApsOn = 0;            // 主动防御激活剩余秒
@@ -490,7 +491,7 @@
         case 'pick':
           sfx.pick();
           spawnParticles(e.x, e.y, PUP_COLOR[e.type] || '#fff', 8, 2.2);
-          if (e.id === myId && e.type === 'atgm') showDamageNote('🎯 拾取反坦克导弹！按 B 发射（手机：导弹键）', true);
+          if (e.id === myId && e.type === 'atgm') showDamageNote('🎯 拾取强化攻击！下一发开火自动发射', true);
           break;
         case 'tick':
           sfx.tick();
@@ -629,9 +630,9 @@
     // 梅卡瓦：1/2 切换主炮/迫击炮
     if (e.code === 'Digit1' && selfType === 'il') { mortarMode = false; showDamageNote('🔫 主炮模式', true); }
     if (e.code === 'Digit2' && selfType === 'il') { mortarMode = true; showDamageNote('💣 迫击炮模式（穿墙直射，30s 一发）', true); }
-    // B 键发射反坦克导弹
-    if (e.code === 'KeyB' && selfAg > 0 && ws && ws.readyState === 1 && phase === 'play') {
-      ws.send(JSON.stringify({ t: 'atgm' }));
+    // B 键：强化攻击提示（捡到后下一发自动强化，无需按键）
+    if (e.code === 'KeyB' && selfAg > 0) {
+      showDamageNote('🚀 强化攻击已就绪！下一发开火自动发射', true);
     }
     // E 键开启 99B 主动防御
     if (e.code === 'KeyE' && selfType === 'cn' && ws && ws.readyState === 1 && phase === 'play') {
@@ -739,7 +740,7 @@
   const atgmBtn = document.getElementById('btnAtgm');
   if (atgmBtn) {
     atgmBtn.addEventListener('click', () => {
-      if (selfAg > 0 && ws && ws.readyState === 1 && phase === 'play') ws.send(JSON.stringify({ t: 'atgm' }));
+      if (selfAg > 0) showDamageNote('🚀 强化攻击就绪！下一发开火自动发射', true);
     });
   }
   const apsBtn = document.getElementById('btnAps');
@@ -958,8 +959,16 @@
       drawPup(pu, now);
     }
     // 子弹：服务器快照权威渲染（含自机炮弹，解决"发射不显示/消失"）；本地预测弹仅作快照到达前的即时反馈
+    // 子弹插值推进（渲染位置向目标收敛，消除 30Hz 跳帧）
+    for (const rs of bulletRenders.values()) {
+      rs.x += (rs.tx - rs.x) * 0.4;
+      rs.y += (rs.ty - rs.y) * 0.4;
+      rs.vx = rs.tvx; rs.vy = rs.tvy;
+    }
     let hasOwnServerBullet = false;
     for (const b of bullets) {
+      const rs = bulletRenders.get(b.i);
+      if (rs) { b.x = rs.x; b.y = rs.y; b.vx = rs.vx; b.vy = rs.vy; } // 用插值位置渲染
       if (b.o === myId) hasOwnServerBullet = true;
       if (b.hj) {
         // 红箭10 反坦克导弹：超长拖尾 + 亮色弹头 + 尾焰
@@ -977,15 +986,18 @@
         continue;
       }
       if (b.ag) {
-        // 反坦克导弹：慢速长条 + 尾焰
-        const tx = b.x - b.vx * 0.12, ty = b.y - b.vy * 0.12;
-        ctx.strokeStyle = 'rgba(255, 120, 60, 0.8)';
-        ctx.lineWidth = 4;
+        // 强化导弹（ATGM）：与红箭10 同级的长拖尾 + 尾焰
+        const tx = b.x - b.vx * 0.16, ty = b.y - b.vy * 0.16;
+        ctx.strokeStyle = 'rgba(255, 120, 60, 0.85)';
+        ctx.lineWidth = 3.5;
         ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(b.x, b.y); ctx.stroke();
+        ctx.strokeStyle = 'rgba(255, 200, 110, 0.35)';
+        ctx.lineWidth = 8;
+        ctx.beginPath(); ctx.moveTo(b.x - b.vx * 0.08, b.y - b.vy * 0.08); ctx.lineTo(b.x, b.y); ctx.stroke();
         ctx.fillStyle = '#ffd9a0';
-        ctx.beginPath(); ctx.arc(b.x, b.y, 3.6, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = 'rgba(255, 160, 70, 0.4)';
-        ctx.beginPath(); ctx.arc(b.x, b.y, 9, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(b.x, b.y, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(255, 160, 70, 0.5)';
+        ctx.beginPath(); ctx.arc(b.x, b.y, 10, 0, Math.PI * 2); ctx.fill();
         continue;
       }
       const tx = b.x - b.vx * 0.045, ty = b.y - b.vy * 0.045;
@@ -1005,6 +1017,21 @@
         ctx.strokeStyle = 'rgba(255, 90, 40, 0.85)';
         ctx.lineWidth = 3.5;
         ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(pb.x, pb.y); ctx.stroke();
+        ctx.fillStyle = '#ffd9a0';
+        ctx.beginPath(); ctx.arc(pb.x, pb.y, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(255, 160, 70, 0.5)';
+        ctx.beginPath(); ctx.arc(pb.x, pb.y, 10, 0, Math.PI * 2); ctx.fill();
+        continue;
+      }
+      if (pb.isAtgm) {
+        // 强化导弹预测弹：与红箭10 同级长拖尾
+        const tx = pb.x - pb.vx * 0.16, ty = pb.y - pb.vy * 0.16;
+        ctx.strokeStyle = 'rgba(255, 120, 60, 0.85)';
+        ctx.lineWidth = 3.5;
+        ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(pb.x, pb.y); ctx.stroke();
+        ctx.strokeStyle = 'rgba(255, 200, 110, 0.35)';
+        ctx.lineWidth = 8;
+        ctx.beginPath(); ctx.moveTo(pb.x - pb.vx * 0.08, pb.y - pb.vy * 0.08); ctx.lineTo(pb.x, pb.y); ctx.stroke();
         ctx.fillStyle = '#ffd9a0';
         ctx.beginPath(); ctx.arc(pb.x, pb.y, 4, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = 'rgba(255, 160, 70, 0.5)';
@@ -1964,6 +1991,9 @@
     if (localReload > 0) {
       els.ammoBox.textContent = '装填中 ' + Math.ceil(localReload) + 's';
       els.ammoBox.classList.add('reloading');
+    } else if (selfAg > 0) {
+      els.ammoBox.textContent = '🚀 强化攻击就绪（下一发）';
+      els.ammoBox.classList.remove('reloading');
     } else if (selfType === 'hj10') {
       els.ammoBox.textContent = '🚀 导弹 x' + localMag;
       els.ammoBox.classList.remove('reloading');
@@ -2416,22 +2446,33 @@
       // 本地子弹预测：立即显示自己发射的子弹（不等服务器往返），穿深与服务器一致
       if (pred) {
         const ta = autoTurret ? pred.a : mouseAngle;
-        const hjt = TANK_TYPES[selfType] || TANK_TYPES.us;
-        const spd = hjt.hjSpeed || 620;
-        const tt = hjt;
-        // 红箭10：左右发射箱交替发射（左箱一发、右箱一发，出生点侧向偏移）
-        let ox = 0;
-        if (hjt.instaKill) { localHjSide = localHjSide ? 0 : 1; ox = (localHjSide ? -1 : 1) * 7; }
-        predBullets.push({
-          x: pred.x + Math.cos(ta) * 34 - Math.sin(ta) * ox,
-          y: pred.y + Math.sin(ta) * 34 + Math.cos(ta) * ox,
-          vx: Math.cos(ta) * spd, vy: Math.sin(ta) * spd,
-          pen: tt.pen, t: performance.now(),
-          isHj: !!hjt.instaKill, // 红箭10：极快、不可反弹、撞墙消失
-        });
-        if (selfBuffs.trp > 0) {
-          predBullets.push({ x: pred.x + Math.cos(ta - 0.18) * 34, y: pred.y + Math.sin(ta - 0.18) * 34, vx: Math.cos(ta - 0.18) * spd, vy: Math.sin(ta - 0.18) * spd, pen: tt.pen, t: performance.now() });
-          predBullets.push({ x: pred.x + Math.cos(ta + 0.18) * 34, y: pred.y + Math.sin(ta + 0.18) * 34, vx: Math.cos(ta + 0.18) * spd, vy: Math.sin(ta + 0.18) * spd, pen: tt.pen, t: performance.now() });
+        // 强化攻击（捡到导弹道具）：下一发自动变成强化导弹（慢速、长拖尾），本地模拟消耗
+        if (selfAg > 0) {
+          selfAg = 0;
+          predBullets.push({
+            x: pred.x + Math.cos(ta) * 34, y: pred.y + Math.sin(ta) * 34,
+            vx: Math.cos(ta) * 260, vy: Math.sin(ta) * 260,
+            pen: 1500, t: performance.now(),
+            isAtgm: true, // 强化导弹：慢速直线、长拖尾（渲染与服务器一致）
+          });
+        } else {
+          const hjt = TANK_TYPES[selfType] || TANK_TYPES.us;
+          const spd = hjt.hjSpeed || 620;
+          const tt = hjt;
+          // 红箭10：左右发射箱交替发射（左箱一发、右箱一发，出生点侧向偏移）
+          let ox = 0;
+          if (hjt.instaKill) { localHjSide = localHjSide ? 0 : 1; ox = (localHjSide ? -1 : 1) * 7; }
+          predBullets.push({
+            x: pred.x + Math.cos(ta) * 34 - Math.sin(ta) * ox,
+            y: pred.y + Math.sin(ta) * 34 + Math.cos(ta) * ox,
+            vx: Math.cos(ta) * spd, vy: Math.sin(ta) * spd,
+            pen: tt.pen, t: performance.now(),
+            isHj: !!hjt.instaKill, // 红箭10：极快、不可反弹、撞墙消失
+          });
+          if (selfBuffs.trp > 0) {
+            predBullets.push({ x: pred.x + Math.cos(ta - 0.18) * 34, y: pred.y + Math.sin(ta - 0.18) * 34, vx: Math.cos(ta - 0.18) * spd, vy: Math.sin(ta - 0.18) * spd, pen: tt.pen, t: performance.now() });
+            predBullets.push({ x: pred.x + Math.cos(ta + 0.18) * 34, y: pred.y + Math.sin(ta + 0.18) * 34, vx: Math.cos(ta + 0.18) * spd, vy: Math.sin(ta + 0.18) * spd, pen: tt.pen, t: performance.now() });
+          }
         }
       }
     }
@@ -2478,15 +2519,15 @@
         }
       }
       if (hitTank) { predBullets.splice(i, 1); continue; }
-      // 世界墙反弹（与服务器同：反弹扣穿深，扣完消失；迫击炮弹穿墙；红箭10 撞墙消失）
+      // 世界墙反弹（与服务器同：反弹扣穿深，扣完消失；迫击炮弹穿墙；红箭10/强化导弹撞墙消失）
       let bounced = false;
-      if (pb.isHj && (pb.x < WALL_T || pb.x > WORLD.w - WALL_T || pb.y < WALL_T || pb.y > WORLD.h - WALL_T)) { predBullets.splice(i, 1); continue; }
+      if ((pb.isHj || pb.isAtgm) && (pb.x < WALL_T || pb.x > WORLD.w - WALL_T || pb.y < WALL_T || pb.y > WORLD.h - WALL_T)) { predBullets.splice(i, 1); continue; }
       if (!pb.isMortar && !pb.isHj && pb.x < WALL_T + 5) { pb.x = WALL_T + 5; pb.vx = -pb.vx; bounced = true; }
       else if (!pb.isMortar && !pb.isHj && pb.x > WORLD.w - WALL_T - 5) { pb.x = WORLD.w - WALL_T - 5; pb.vx = -pb.vx; bounced = true; }
       if (!bounced && !pb.isMortar && !pb.isHj && pb.y < WALL_T + 5) { pb.y = WALL_T + 5; pb.vy = -pb.vy; bounced = true; }
       else if (!bounced && !pb.isMortar && !pb.isHj && pb.y > WORLD.h - WALL_T - 5) { pb.y = WORLD.h - WALL_T - 5; pb.vy = -pb.vy; bounced = true; }
-      // 障碍反弹：线段检测（与服务器 segRectHit 一致，反弹轨迹完整；迫击炮弹穿墙；红箭10 撞墙消失）
-      if (!bounced && !pb.isMortar && !pb.isHj) {
+      // 障碍反弹：线段检测（与服务器 segRectHit 一致，反弹轨迹完整；迫击炮弹穿墙；红箭10/强化导弹撞墙消失）
+      if (!bounced && !pb.isMortar && !pb.isHj && !pb.isAtgm) {
         for (const o of mapObstacles) {
           const hit = segRectHit(px0, py0, pb.x, pb.y, o);
           if (hit) {
@@ -2504,11 +2545,11 @@
       if (bounced) {
         if (bouncePen(pb)) { predBullets.splice(i, 1); continue; }
       }
-      // 兜底：子弹中心进入障碍内部（反弹后贴墙/擦角）→ 按最近表面推出（与服务器一致，杜绝穿墙；迫击炮跳过；红箭10 撞墙消失）
+      // 兜底：子弹中心进入障碍内部（反弹后贴墙/擦角）→ 按最近表面推出（与服务器一致，杜绝穿墙；迫击炮跳过；红箭10/强化导弹撞墙消失）
       if (!bounced && !pb.isMortar) {
         for (const o of mapObstacles) {
           if (pb.x > o.x && pb.x < o.x + o.w && pb.y > o.y && pb.y < o.y + o.h) {
-            if (pb.isHj) { predBullets.splice(i, 1); break; } // 红箭10 撞墙消失
+            if (pb.isHj || pb.isAtgm) { predBullets.splice(i, 1); break; } // 撞墙消失
             const dl = pb.x - o.x, dr = o.x + o.w - pb.x;
             const dt = pb.y - o.y, db = o.y + o.h - pb.y;
             const min = Math.min(dl, dr, dt, db);
@@ -2545,6 +2586,15 @@
     const st = interpState(now);
     const sa = st.a;
     bullets = sa ? sa.bullets : [];
+    // 子弹插值状态维护（id 匹配：更新目标位置，删除消失子弹）
+    const seenB = new Set();
+    for (const b of bullets) {
+      seenB.add(b.i);
+      const rs = bulletRenders.get(b.i);
+      if (rs) { rs.tx = b.x; rs.ty = b.y; rs.tvx = b.vx; rs.tvy = b.vy; }
+      else bulletRenders.set(b.i, { x: b.x, y: b.y, vx: b.vx, vy: b.vy, tx: b.x, ty: b.y, tvx: b.vx, tvy: b.vy });
+    }
+    for (const id of bulletRenders.keys()) if (!seenB.has(id)) bulletRenders.delete(id);
     pups = sa ? sa.pups : [];
     const selfPos = (pred && selfAlive && phase === 'play') ? pred : null;
 
