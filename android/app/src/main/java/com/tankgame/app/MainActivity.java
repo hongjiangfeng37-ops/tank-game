@@ -35,11 +35,11 @@ public class MainActivity extends Activity {
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);                 // 布局设置 localStorage 持久化
         s.setMediaPlaybackRequiresUserGesture(false); // 允许音效自动播放
+        s.setCacheMode(WebSettings.LOAD_NO_CACHE);    // 禁用缓存：每次启动加载最新版本
         s.setSupportZoom(false);
         s.setBuiltInZoomControls(false);
         s.setLoadWithOverviewMode(true);
         s.setUseWideViewPort(true);
-        s.setCacheMode(WebSettings.LOAD_DEFAULT);
 
         web.setWebViewClient(new WebViewClient());
         web.setWebChromeClient(new WebChromeClient());
