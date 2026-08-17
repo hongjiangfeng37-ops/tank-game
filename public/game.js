@@ -66,7 +66,7 @@
   const MAG_SIZE = 1;       // 弹匣容量：单发装填（与 server.js 一致）
   const TANK_TYPES = {      // 客户端展示用（与 server.js 一致）
     us: { name: '美军 M1A1标题党', reload: 4, eraMax: 300, pen: 800, penDrop: 100, armor: '600/200/400', armorEra: '900/800/400', color: '#6b8e5a' },
-    ru: { name: '俄军 T90A', reload: 6, eraMax: 500, pen: 750, penDrop: 200, armor: '800/300/700', armorEra: '1200/1100/700', color: '#5f7a52' },
+    ru: { name: '俄军 T90A', reload: 6, eraMax: 500, pen: 800, penDrop: 200, armor: '800/300/700', armorEra: '1200/1100/700', color: '#5f7a52' },
     jp: { name: '日军 90式主战坦克', reload: 3, eraMax: 200, pen: 500, penGain: 200, penBounceMax: 9, armor: '550/150/250', armorEra: '800/400/500', color: '#7a6a4a' },
     il: { name: '以军 梅卡瓦Mk4', reload: 4.5, eraMax: 200, pen: 550, penDrop: 100, armor: '600+200机/250+200机/450+200机', armorEra: '850+200机/800+200机/450+200机', color: '#8a9a6a', mortar: true },
     cn: { name: '中国 99B主战坦克', reload: 5, eraMax: 400, pen: 900, penDrop: 50, armor: '1000/150/650', armorEra: '1450/600/1100', color: '#c9b27c', aps: true },
@@ -542,7 +542,10 @@
           if (e.id === myId) showDamageNote('💥 被迫击炮命中！爆反 -30%', false);
           break;
         case 'jam':
-          if (e.id === myId) showDamageNote('📡 反坦克导弹被干扰，原路返回！', false);
+          // 干扰闪光特效（蓝白电弧爆发——导弹被干扰掉头的瞬间）
+          spawnParticles(e.x, e.y, '#8a6bff', 14, 4.5);
+          spawnParticles(e.x, e.y, '#bfe8ff', 10, 3);
+          if (e.id === myId) showDamageNote('📡 导弹被干扰，原路返回！', false);
           break;
         case 'atgm':
           if (e.id === myId) showDamageNote('🚀 反坦克导弹发射！', true);
@@ -970,6 +973,22 @@
       const rs = bulletRenders.get(b.i);
       if (rs) { b.x = rs.x; b.y = rs.y; b.vx = rs.vx; b.vy = rs.vy; } // 用插值位置渲染
       if (b.o === myId) hasOwnServerBullet = true;
+      if (b.r) {
+        // 被窗帘干扰返回：蓝紫色电子干扰拖尾 + 闪烁（明显返回动画）
+        const pulse = 0.6 + Math.sin(now / 55) * 0.4;
+        const tx = b.x - b.vx * 0.16, ty = b.y - b.vy * 0.16;
+        ctx.strokeStyle = 'rgba(150, 110, 255, ' + pulse + ')';
+        ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(b.x, b.y); ctx.stroke();
+        ctx.strokeStyle = 'rgba(120, 200, 255, ' + pulse * 0.5 + ')';
+        ctx.lineWidth = 9;
+        ctx.beginPath(); ctx.moveTo(b.x - b.vx * 0.09, b.y - b.vy * 0.09); ctx.lineTo(b.x, b.y); ctx.stroke();
+        ctx.fillStyle = '#efe6ff';
+        ctx.beginPath(); ctx.arc(b.x, b.y, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(170, 120, 255, 0.55)';
+        ctx.beginPath(); ctx.arc(b.x, b.y, 11, 0, Math.PI * 2); ctx.fill();
+        continue;
+      }
       if (b.hj) {
         // 红箭10 反坦克导弹：超长拖尾 + 亮色弹头 + 尾焰
         const tx = b.x - b.vx * 0.16, ty = b.y - b.vy * 0.16;
@@ -2226,7 +2245,7 @@
   // 选坦克（大厅）
   const TANK_INFO = {
     us: '<b>🇺🇸 美军 M1A1</b>　<span class="ti-spec">穿深800(反弹-100)｜装甲600/200/400｜爆反+300｜装填4s</span><br>⚠ 尾舱弹药架被击中必殉爆｜快移速快装填',
-    ru: '<b>🇷🇺 俄军 T90A</b>　<span class="ti-spec">穿深750(反弹-200)｜装甲800/300/700｜爆反+500｜装填6s</span><br>📡 窗帘干扰：炮塔前方扇形打断迫击炮锁定/导弹原路返回（红眼发光警示）｜侧面弹药架（爆反≥30%保护）',
+    ru: '<b>🇷🇺 俄军 T90A</b>　<span class="ti-spec">穿深800(反弹-200)｜装甲800/300/700｜爆反+500｜装填6s</span><br>📡 窗帘干扰：前方扇形导弹原路返回（干扰后冷却20s）｜侧面弹药架（爆反≥30%保护）',
     jp: '<b>🇯🇵 日军 90式</b>　<span class="ti-spec">穿深500(反弹+200)｜装甲550/150/250｜爆反+200｜装填3s</span><br>💥 反弹穿深递增最多9次｜尾舱殉爆+前置弹药架起火(50%)',
     il: '<b>🇮🇱 以军 梅卡瓦Mk4</b>　<span class="ti-spec">穿深550｜装甲600/250/450(发动机+200)｜爆反+200｜装填4.5s</span><br>🔧 发动机前置装甲加成｜弹药架只起火不殉爆｜炮塔坏连带起火｜💣 迫击炮(静止3s锁定扣30%爆反，1/2键切换)',
     cn: '<b>🇨🇳 中国 99B</b>　<span class="ti-spec">穿深900(反弹-50)｜装甲1000/150/650｜爆反+450｜装填5s</span><br>🛡️ 主动防御E(2次抵挡/60s恢复，炮塔坏失效)｜侧面弹药架必殉爆｜全场最快',
