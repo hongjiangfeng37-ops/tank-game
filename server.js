@@ -323,6 +323,7 @@ function makeConn(socket) {
 // ---------------- 房间与玩家 ----------------
 const rooms = new Map(); // code -> room
 let nextPlayerId = 1;
+let nextBulletId = 1; // 子弹唯一 id（客户端插值用）
 
 function genCode() {
   for (let i = 0; i < 50; i++) {
@@ -1112,7 +1113,7 @@ function sim(room, dt, now) {
           room.pendingEvents.push({ k: 'boom', x: Math.round(tk.x), y: Math.round(tk.y) });
           continue; // 下一辆坦克
         }
-        p.fireCd = 0.3; // 开火节流（红箭10 两连发间隔 ~0.3s；单发坦克无影响）
+        p.fireCd = 0.25; // 开火节流（与客户端预测一致 0.25s，消除预测弹与服务器弹脱节）
         p.mag = Math.max(0, p.mag - 1); // 弹匣递减（红箭10 两连发：打一发留一发，打完才装填）
         // 装填时间：按型号，装弹机损坏翻倍，速射道具减半（仅弹匣打空时开始装填）
         if (p.mag === 0) {
@@ -1121,7 +1122,22 @@ function sim(room, dt, now) {
           if (rapid) reload *= 0.5;
           p.reloadT = reload;
         }
+        // 强化攻击：捡到导弹道具后，下一发主炮自动变成强化导弹（1 发，慢速直线穿深 1500）
+        const agShot = p.atgm > 0;
+        if (agShot) p.atgm = 0;
         const fire = (ang) => {
+          if (agShot) {
+            // 强化导弹：慢速 260、穿深 1500、撞墙消失、可被 T90A 窗帘干扰返回
+            room.bullets.push({
+              x: mx, y: my,
+              vx: Math.cos(ang) * 260, vy: Math.sin(ang) * 260,
+              ownerId: p.id, ownerType: p.type, pen: 1500, life: 8,
+              spawnT: now, penBounces: 0,
+              isAtgm: true,
+              id: nextBulletId++, // 插值用唯一 id
+            });
+            return;
+          }
           const bspeed = tt.hjSpeed || BULLET.speed; // 红箭10 导弹极快
           // 红箭10：左右发射架交替发射（左管一发、右管一发，弹丸从对应管口侧向偏移飞出）
           let ox = 0;
@@ -1137,11 +1153,14 @@ function sim(room, dt, now) {
             spawnT: now, // 出生保护：刚出膛 200ms 内不判定命中自己（防斜射时炮口投影落入命中框吞炮弹）
             penBounces: 0, // 反弹计数（90式反弹增益用）
             isHj: tt.instaKill || false, // 红箭10 导弹：极快、不可反弹、打中就死（长拖尾客户端渲染）
+            id: nextBulletId++, // 插值用唯一 id
           });
         };
-        if (triple) { fire(tk.ta - 0.18); fire(tk.ta); fire(tk.ta + 0.18); }
+        if (agShot) fire(tk.ta); // 强化攻击：单发
+        else if (triple) { fire(tk.ta - 0.18); fire(tk.ta); fire(tk.ta + 0.18); }
         else fire(tk.ta);
         room.pendingEvents.push({ k: 'shot', id: p.id, x: Math.round(mx), y: Math.round(my) });
+        if (agShot) room.pendingEvents.push({ k: 'atgm', id: p.id, x: Math.round(mx), y: Math.round(my) });
       }
     }
   }
@@ -1733,6 +1752,7 @@ function broadcast(room) {
       pen: Math.round(b.pen),
       ag: b.isAtgm ? 1 : 0, // 反坦克导弹标记（客户端样式）
       hj: b.isHj ? 1 : 0,   // 红箭10 导弹标记（客户端长拖尾渲染）
+      i: b.id,              // 唯一 id（客户端插值）
     })),
     pups: room.pups.map((pu) => ({ x: Math.round(pu.x), y: Math.round(pu.y), type: pu.type, life: Math.round(pu.life) })),
     events: room.pendingEvents.splice(0),
@@ -1837,25 +1857,9 @@ function onMessage(conn, buf) {
         ownerId: p.id, ownerType: p.type, pen: 100, life: 6,
         spawnT: Date.now(), penBounces: 0,
         isMortar: true, // 迫击炮弹：穿墙（高抛弧线）、命中扣 30% 爆反 + 100 穿深判定
+        id: nextBulletId++, // 插值用唯一 id
       });
       room.pendingEvents.push({ k: 'mshot', id: p.id, x: Math.round(mx), y: Math.round(my) });
-      break;
-    }
-    case 'atgm': {
-      // 反坦克导弹：拾取后发射一次（慢速直线，穿深 1500）
-      if (!p || !p.room || p.room.phase !== 'play' || !p.alive || p.atgm <= 0) break;
-      if (!p.tank) break;
-      p.atgm = 0;
-      const tk = p.tank;
-      const mx = tk.x + Math.cos(tk.ta) * 40, my = tk.y + Math.sin(tk.ta) * 40;
-      room.bullets.push({
-        x: mx, y: my,
-        vx: Math.cos(tk.ta) * 260, vy: Math.sin(tk.ta) * 260, // 慢速
-        ownerId: p.id, ownerType: p.type, pen: 1500, life: 8,
-        spawnT: Date.now(), penBounces: 0,
-        isAtgm: true, // 反坦克导弹：直线、撞墙消失、可被窗帘干扰返回
-      });
-      room.pendingEvents.push({ k: 'atgm', id: p.id, x: Math.round(mx), y: Math.round(my) });
       break;
     }
     case 'ping': {
