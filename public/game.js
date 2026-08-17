@@ -67,7 +67,7 @@
   const TANK_TYPES = {      // 客户端展示用（与 server.js 一致）
     us: { name: '美军 M1A1标题党', reload: 4, eraMax: 300, pen: 800, penDrop: 100, armor: '600/200/400', armorEra: '900/800/400', color: '#6b8e5a' },
     ru: { name: '俄军 T80U', reload: 6, eraMax: 500, pen: 750, penDrop: 200, armor: '800/250/700', armorEra: '1200/1050/700', color: '#5f7a52' },
-    jp: { name: '日军 90式主战坦克', reload: 5, eraMax: 200, pen: 500, penGain: 100, penBounceMax: 9, armor: '550/150/250', armorEra: '800/400/500', color: '#7a6a4a' },
+    jp: { name: '日军 90式主战坦克', reload: 3, eraMax: 200, pen: 500, penGain: 100, penBounceMax: 9, armor: '550/150/250', armorEra: '800/400/500', color: '#7a6a4a' },
   };
   const PALETTE = ['#ff5d5d', '#4fc3f7', '#66bb6a', '#ffee58', '#ff8a65', '#ba68c8', '#4dd0e1', '#f06292', '#aed581', '#90a4ae'];
   const PUP_COLOR = { health: '#4caf50', shield: '#4dd0e1', rapid: '#ffca28', triple: '#ff7043' };
