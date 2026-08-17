@@ -75,6 +75,14 @@ button.mini:hover { border-color: #4fc3f7; }
   border-radius: 10px; background: rgba(10, 15, 28, 0.8); border: 1px solid #4caf50; color: #aeea8a;
 }
 #eraBox.no-era { border-color: #ff5d5d; color: #ff5d5d; }
+/* 特殊武器状态（梅卡瓦迫击炮 / 99B 主动防御）：并入玩家 HUD，不遮挡战场 */
+#wepBox {
+  margin-top: 6px; padding: 3px 10px; font-size: 13px;
+  border-radius: 10px; background: rgba(10, 15, 28, 0.8); border: 1px solid #2a3a5c; color: #ffd54f;
+}
+#wepBox.hidden { display: none; }
+#wepBar { display: block; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, 0.12); margin-top: 3px; overflow: hidden; }
+#wepBar b { display: block; height: 100%; width: 0%; border-radius: 3px; transition: width .1s; }
 #partsBox { margin-top: 6px; display: flex; gap: 5px; }
 #partsBox .part {
   padding: 2px 8px; border-radius: 8px; font-size: 13px;
