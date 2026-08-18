@@ -67,10 +67,10 @@
   const TANK_TYPES = {      // 客户端展示用（与 server.js 一致）
     us: { name: '美军 M1A1标题党', reload: 4, eraMax: 300, pen: 800, penDrop: 100, armor: '600/200/400', armorEra: '900/800/400', color: '#6b8e5a' },
     ru: { name: '俄军 T90A', reload: 6, eraMax: 500, pen: 800, penDrop: 200, armor: '800/300/700', armorEra: '1200/1100/700', color: '#5f7a52' },
-    jp: { name: '日军 90式主战坦克', reload: 3, eraMax: 200, pen: 500, penGain: 200, penBounceMax: 9, armor: '550/150/250', armorEra: '800/400/500', color: '#7a6a4a' },
+    jp: { name: '日军 90式主战坦克', reload: 2.5, eraMax: 200, pen: 500, penGain: 200, penBounceMax: 9, armor: '550/150/250', armorEra: '800/400/500', color: '#7a6a4a' },
     il: { name: '以军 梅卡瓦Mk4', reload: 4.5, eraMax: 200, pen: 550, penDrop: 100, armor: '600+200机/250+200机/450+200机', armorEra: '850+200机/800+200机/450+200机', color: '#8a9a6a', mortar: true },
     cn: { name: '中国 99B主战坦克', reload: 5, eraMax: 400, pen: 900, penDrop: 50, armor: '1000/150/650', armorEra: '1450/600/1100', color: '#c9b27c', aps: true },
-    de: { name: '欧盟 豹二A7主战坦克', reload: 5, eraMax: 300, pen: 800, penDrop: 0, penBounceMax: 2, armor: '600/200/400', armorEra: '900/800/400', color: '#7a8a5a', fireCtrl: true },
+    de: { name: '欧盟 豹二A7主战坦克', reload: 5, eraMax: 300, pen: 800, penDrop: 0, penBounceMax: 5, armor: '600/200/400', armorEra: '900/800/400', color: '#7a8a5a', fireCtrl: true },
     hj10: { name: '中国 红箭10导弹车', reload: 15, eraMax: 0, pen: 2000, penDrop: 0, mag: 2, armor: '200/200/200', armorEra: '200/200/200', color: '#c9b27c', instaKill: true, noBounce: true, hjSpeed: 900 },
   };
   const PALETTE = ['#ff5d5d', '#4fc3f7', '#66bb6a', '#ffee58', '#ff8a65', '#ba68c8', '#4dd0e1', '#f06292', '#aed581', '#90a4ae'];
@@ -2331,10 +2331,10 @@
   const TANK_INFO = {
     us: '<b>🇺🇸 美军 M1A1</b>　<span class="ti-spec">穿深800(反弹-100)｜装甲600/200/400｜爆反+300｜装填4s</span><br>⚠ 尾舱弹药架被击中必殉爆｜快移速快装填',
     ru: '<b>🇷🇺 俄军 T90A</b>　<span class="ti-spec">穿深800(反弹-200)｜装甲800/300/700｜爆反+500｜装填6s</span><br>📡 窗帘干扰：前方扇形导弹原路返回（干扰后冷却20s）｜侧面弹药架（爆反≥30%保护）',
-    jp: '<b>🇯🇵 日军 90式</b>　<span class="ti-spec">穿深500(反弹+200)｜装甲550/150/250｜爆反+200｜装填3s</span><br>💥 反弹穿深递增最多9次｜尾舱殉爆+前置弹药架起火(50%)',
+    jp: '<b>🇯🇵 日军 90式</b>　<span class="ti-spec">穿深500(反弹+200)｜装甲550/150/250｜爆反+200｜装填2.5s</span><br>💥 反弹穿深递增最多9次｜尾舱殉爆+前置弹药架起火(50%)',
     il: '<b>🇮🇱 以军 梅卡瓦Mk4</b>　<span class="ti-spec">穿深550｜装甲600/250/450(发动机+200)｜爆反+200｜装填4.5s</span><br>🔧 发动机前置装甲加成｜弹药架只起火不殉爆｜炮塔坏连带起火｜💣 迫击炮(静止3s锁定扣30%爆反，1/2键切换)',
     cn: '<b>🇨🇳 中国 99B</b>　<span class="ti-spec">穿深900(反弹-50)｜装甲1000/150/650｜爆反+450｜装填5s</span><br>🛡️ 主动防御E(2次抵挡/60s恢复，炮塔坏失效)｜侧面弹药架必殉爆｜全场最快',
-    de: '<b>🇪🇺 欧盟 豹二A7</b>　<span class="ti-spec">穿深800(反弹不扣)｜装甲600/200/400｜爆反+300｜装填5s</span><br>💥 反弹不扣穿深但仅2次｜尾舱殉爆+前置弹药架起火｜📡 火控雷达(E)：开启显示弹道+穿深50，30s/冷却5s',
+    de: '<b>🇪🇺 欧盟 豹二A7</b>　<span class="ti-spec">穿深800(反弹不扣)｜装甲600/200/400｜爆反+300｜装填5s</span><br>💥 反弹不扣穿深最多5次｜尾舱殉爆+前置弹药架起火｜📡 火控雷达(E)：开启显示弹道+穿深50，30s/冷却5s',
     hj10: '<b>🇨🇳 中国 红箭10导弹车</b>　<span class="ti-spec">穿深2000打中就死｜装甲200/200/200｜无爆反｜装填15s(两连发)</span><br>🚀 给他们共和国震撼！让西方朋友上市！',
   };
   const tankInfoEl = document.getElementById('tankInfo');
