@@ -2142,7 +2142,7 @@
       // 豹二A7 火控雷达：开启 30s 显示弹道+穿深50 / 冷却 5s
       els.wepBox.classList.remove('hidden');
       if (selfRadarT > 0) {
-        els.wepText.textContent = '📡 火控雷达激活 ' + selfRadarT + 's（弹道可见，穿深+50）';
+        els.wepText.textContent = '📡 火控雷达激活 ' + selfRadarT + 's（弹道可见，穿深+100）';
         els.wepBar.firstChild.style.width = Math.round(selfRadarT / 30 * 100) + '%';
         els.wepBar.firstChild.style.background = '#4dd0e1';
         els.wepBox.style.borderColor = '#4dd0e1';
@@ -2349,7 +2349,7 @@
     jp: '<b>🇯🇵 日军 90式</b>　<span class="ti-spec">穿深500(反弹+200)｜装甲550/150/250｜爆反+200｜装填2.5s</span><br>💥 反弹穿深递增最多9次｜尾舱殉爆+前置弹药架起火(50%)',
     il: '<b>🇮🇱 以军 梅卡瓦Mk4</b>　<span class="ti-spec">穿深550｜装甲600/250/450(发动机+200)｜爆反+200｜装填4.5s</span><br>🔧 发动机前置装甲加成｜弹药架只起火不殉爆｜炮塔坏连带起火｜💣 迫击炮(静止3s锁定扣30%爆反，1/2键切换)',
     cn: '<b>🇨🇳 中国 99B</b>　<span class="ti-spec">穿深900(反弹-50)｜装甲1000/150/650｜爆反+450｜装填5s</span><br>🛡️ 主动防御E(2次抵挡/60s恢复，炮塔坏失效)｜侧面弹药架必殉爆｜全场最快',
-    de: '<b>🇪🇺 欧盟 豹二A7</b>　<span class="ti-spec">穿深800(反弹不扣)｜装甲600/200/400｜爆反+300｜装填5s</span><br>💥 反弹不扣穿深最多5次｜尾舱殉爆+前置弹药架起火｜📡 火控雷达(E)：开启显示弹道+穿深50，30s/冷却5s',
+    de: '<b>🇪🇺 欧盟 豹二A7</b>　<span class="ti-spec">穿深800(反弹不扣)｜装甲600/200/400｜爆反+300｜装填5s</span><br>💥 反弹不扣穿深最多5次｜尾舱殉爆+前置弹药架起火｜📡 火控雷达(E)：开启显示弹道+穿深100，30s/冷却5s',
     hj10: '<b>🇨🇳 中国 红箭10导弹车</b>　<span class="ti-spec">穿深2000打中就死｜装甲200/200/200｜无爆反｜装填15s(两连发)</span><br>🚀 给他们共和国震撼！让西方朋友上市！',
   };
   const tankInfoEl = document.getElementById('tankInfo');
