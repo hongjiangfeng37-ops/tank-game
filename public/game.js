@@ -70,7 +70,7 @@
     jp: { name: '日军 90式主战坦克', reload: 3, eraMax: 200, pen: 500, penGain: 200, penBounceMax: 9, armor: '550/150/250', armorEra: '800/400/500', color: '#7a6a4a' },
     il: { name: '以军 梅卡瓦Mk4', reload: 4.5, eraMax: 200, pen: 550, penDrop: 100, armor: '600+200机/250+200机/450+200机', armorEra: '850+200机/800+200机/450+200机', color: '#8a9a6a', mortar: true },
     cn: { name: '中国 99B主战坦克', reload: 5, eraMax: 400, pen: 900, penDrop: 50, armor: '1000/150/650', armorEra: '1450/600/1100', color: '#c9b27c', aps: true },
-    de: { name: '欧盟 豹二A6主战坦克', reload: 5, eraMax: 300, pen: 800, penDrop: 0, penBounceMax: 2, armor: '600/200/400', armorEra: '900/800/400', color: '#7a8a5a' },
+    de: { name: '欧盟 豹二A7主战坦克', reload: 5, eraMax: 300, pen: 800, penDrop: 0, penBounceMax: 2, armor: '600/200/400', armorEra: '900/800/400', color: '#7a8a5a', fireCtrl: true },
     hj10: { name: '中国 红箭10导弹车', reload: 15, eraMax: 0, pen: 2000, penDrop: 0, mag: 2, armor: '200/200/200', armorEra: '200/200/200', color: '#c9b27c', instaKill: true, noBounce: true, hjSpeed: 900 },
   };
   const PALETTE = ['#ff5d5d', '#4fc3f7', '#66bb6a', '#ffee58', '#ff8a65', '#ba68c8', '#4dd0e1', '#f06292', '#aed581', '#90a4ae'];
@@ -179,6 +179,8 @@
   let selfApsN = 0;             // 99B 主动防御充能
   let selfApsOn = 0;            // 主动防御激活剩余秒
   let selfApsCd = 0;            // 主动防御冷却剩余秒
+  let selfRadarT = 0;           // 火控雷达激活剩余秒（豹二A7）
+  let selfRadarCd = 0;          // 火控雷达冷却剩余秒
   let selfType = 'us';          // 坦克型号
   let selfEra = 300;            // 反应装甲血量（服务器权威同步）
 
@@ -448,6 +450,8 @@
       selfApsN = me.ap || 0;     // 主动防御充能
       selfApsOn = me.apo || 0;   // 主动防御激活剩余
       selfApsCd = me.apc || 0;   // 主动防御冷却剩余
+      selfRadarT = me.rt || 0;   // 火控雷达激活剩余
+      selfRadarCd = me.rc || 0;  // 火控雷达冷却剩余
       if (me.ty) selfType = me.ty;
       if (me.era != null) selfEra = me.era;
     }
@@ -638,9 +642,12 @@
     if (e.code === 'KeyB' && selfAg > 0) {
       showDamageNote('🚀 强化攻击已就绪！下一发开火自动发射', true);
     }
-    // E 键开启 99B 主动防御
+    // E 键：99B 主动防御 / 豹二A7 火控雷达
     if (e.code === 'KeyE' && selfType === 'cn' && ws && ws.readyState === 1 && phase === 'play') {
       ws.send(JSON.stringify({ t: 'aps' }));
+    }
+    if (e.code === 'KeyE' && selfType === 'de' && ws && ws.readyState === 1 && phase === 'play') {
+      ws.send(JSON.stringify({ t: 'radar' }));
     }
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
   });
@@ -751,6 +758,12 @@
   if (apsBtn) {
     apsBtn.addEventListener('click', () => {
       if (selfType === 'cn' && ws && ws.readyState === 1 && phase === 'play') ws.send(JSON.stringify({ t: 'aps' }));
+    });
+  }
+  const radarBtn = document.getElementById('btnRadar');
+  if (radarBtn) {
+    radarBtn.addEventListener('click', () => {
+      if (selfType === 'de' && ws && ws.readyState === 1 && phase === 'play') ws.send(JSON.stringify({ t: 'radar' }));
     });
   }
 
@@ -927,6 +940,48 @@
     ctx.arcTo(x, y, x + w, y, r);
     ctx.closePath();
   }
+  // 豹二A7 火控雷达：显示自机炮弹弹道预测线（反弹折线，与服务器反弹一致）
+  function drawRadarTrajectory() {
+    if (phase !== 'play' || !selfAlive || !pred || selfRadarT <= 0 || selfType !== 'de') return;
+    if (!selfParts.turret) return;
+    const ta = autoTurret ? pred.a : mouseAngle;
+    let x = pred.x + Math.cos(ta) * 34, y = pred.y + Math.sin(ta) * 34;
+    let dx = Math.cos(ta), dy = Math.sin(ta);
+    ctx.strokeStyle = 'rgba(77, 208, 225, 0.55)';
+    ctx.lineWidth = 1.6;
+    ctx.setLineDash([7, 5]);
+    ctx.beginPath(); ctx.moveTo(x, y);
+    for (let bounce = 0; bounce < 3; bounce++) {
+      let bounced = false;
+      for (let s = 0; s < 34; s++) { // 每段最多 ~540px
+        const px = x, py = y;
+        x += dx * 16; y += dy * 16;
+        // 世界墙反射
+        if (x < WALL_T || x > WORLD.w - WALL_T || y < WALL_T || y > WORLD.h - WALL_T) {
+          if (x < WALL_T) { x = WALL_T; dx = -dx; } else if (x > WORLD.w - WALL_T) { x = WORLD.w - WALL_T; dx = -dx; }
+          if (y < WALL_T) { y = WALL_T; dy = -dy; } else if (y > WORLD.h - WALL_T) { y = WORLD.h - WALL_T; dy = -dy; }
+          bounced = true; break;
+        }
+        // 障碍反射（用上一帧位置判断进入方向）
+        let hitOb = false;
+        for (const o of mapObstacles) {
+          if (x > o.x && x < o.x + o.w && y > o.y && y < o.y + o.h) {
+            if (px <= o.x) dx = -Math.abs(dx); else if (px >= o.x + o.w) dx = Math.abs(dx);
+            if (py <= o.y) dy = -Math.abs(dy); else if (py >= o.y + o.h) dy = Math.abs(dy);
+            hitOb = true; break;
+          }
+        }
+        if (hitOb) { bounced = true; break; }
+      }
+      ctx.lineTo(x, y);
+      if (!bounced) break;
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(77, 208, 225, 0.75)';
+    ctx.beginPath(); ctx.arc(x, y, 3.2, 0, Math.PI * 2); ctx.fill();
+  }
+
   function drawWorld(st, now) {
     // 背景
     ctx.fillStyle = '#0d1220';
@@ -1070,6 +1125,8 @@
       ctx.fillStyle = 'rgba(255, 220, 130, 0.45)';
       ctx.beginPath(); ctx.arc(pb.x, pb.y, 8, 0, Math.PI * 2); ctx.fill();
     }
+    // 豹二A7 火控雷达弹道预测线（画在坦克下层，突出可见）
+    drawRadarTrajectory();
     // 坦克
     for (const p of players.values()) {
       if (p.render) drawTank(p, now);
@@ -1095,6 +1152,11 @@
       if (pb) {
         pb.classList.toggle('show', selfType === 'cn');
         pb.classList.toggle('on', selfApsOn > 0);
+      }
+      const rb = document.getElementById('btnRadar');
+      if (rb) {
+        rb.classList.toggle('show', selfType === 'de');
+        rb.classList.toggle('on', selfRadarT > 0);
       }
     }
   }
@@ -2061,6 +2123,25 @@
         els.wepBar.firstChild.style.background = '#66bb6a';
         els.wepBox.style.borderColor = '#66bb6a';
       }
+    } else if (selfType === 'de') {
+      // 豹二A7 火控雷达：开启 30s 显示弹道+穿深50 / 冷却 5s
+      els.wepBox.classList.remove('hidden');
+      if (selfRadarT > 0) {
+        els.wepText.textContent = '📡 火控雷达激活 ' + selfRadarT + 's（弹道可见，穿深+50）';
+        els.wepBar.firstChild.style.width = Math.round(selfRadarT / 30 * 100) + '%';
+        els.wepBar.firstChild.style.background = '#4dd0e1';
+        els.wepBox.style.borderColor = '#4dd0e1';
+      } else if (selfRadarCd > 0) {
+        els.wepText.textContent = '📡 火控雷达冷却 ' + selfRadarCd + 's';
+        els.wepBar.firstChild.style.width = Math.round((1 - selfRadarCd / 5) * 100) + '%';
+        els.wepBar.firstChild.style.background = '#ff8a80';
+        els.wepBox.style.borderColor = '#ff8a80';
+      } else {
+        els.wepText.textContent = '📡 火控雷达就绪（按 E 开启）';
+        els.wepBar.firstChild.style.width = '100%';
+        els.wepBar.firstChild.style.background = '#66bb6a';
+        els.wepBox.style.borderColor = '#66bb6a';
+      }
     } else if (selfType === 'cn') {
       els.wepBox.classList.remove('hidden');
       if (selfApsOn > 0) {
@@ -2253,7 +2334,7 @@
     jp: '<b>🇯🇵 日军 90式</b>　<span class="ti-spec">穿深500(反弹+200)｜装甲550/150/250｜爆反+200｜装填3s</span><br>💥 反弹穿深递增最多9次｜尾舱殉爆+前置弹药架起火(50%)',
     il: '<b>🇮🇱 以军 梅卡瓦Mk4</b>　<span class="ti-spec">穿深550｜装甲600/250/450(发动机+200)｜爆反+200｜装填4.5s</span><br>🔧 发动机前置装甲加成｜弹药架只起火不殉爆｜炮塔坏连带起火｜💣 迫击炮(静止3s锁定扣30%爆反，1/2键切换)',
     cn: '<b>🇨🇳 中国 99B</b>　<span class="ti-spec">穿深900(反弹-50)｜装甲1000/150/650｜爆反+450｜装填5s</span><br>🛡️ 主动防御E(2次抵挡/60s恢复，炮塔坏失效)｜侧面弹药架必殉爆｜全场最快',
-    de: '<b>🇪🇺 欧盟 豹二A6</b>　<span class="ti-spec">穿深800(反弹不扣)｜装甲600/200/400｜爆反+300｜装填5s</span><br>💥 反弹不扣穿深但仅2次｜尾舱殉爆+前置弹药架起火',
+    de: '<b>🇪🇺 欧盟 豹二A7</b>　<span class="ti-spec">穿深800(反弹不扣)｜装甲600/200/400｜爆反+300｜装填5s</span><br>💥 反弹不扣穿深但仅2次｜尾舱殉爆+前置弹药架起火｜📡 火控雷达(E)：开启显示弹道+穿深50，30s/冷却5s',
     hj10: '<b>🇨🇳 中国 红箭10导弹车</b>　<span class="ti-spec">穿深2000打中就死｜装甲200/200/200｜无爆反｜装填15s(两连发)</span><br>🚀 给他们共和国震撼！让西方朋友上市！',
   };
   const tankInfoEl = document.getElementById('tankInfo');
