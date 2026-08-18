@@ -173,6 +173,7 @@
   let selfJm = 0;               // 自己被窗帘干扰
   let selfShtoraCd = 0;         // T90A 干扰冷却剩余（20s 满=可用）
   let localHjSide = 0;          // 红箭10 左右发射架交替标记
+  let mortarLocalLock = 0;      // 手机/键盘按住开火的本地迫击炮锁（防重复发送）
   const bulletRenders = new Map(); // 快照子弹插值状态（id → {x,y,tx,ty,...}）消除 30Hz 跳帧
   let mortarMode = false;       // 梅卡瓦当前火炮模式：false=主炮 true=迫击炮
   let selfApsN = 0;             // 99B 主动防御充能
@@ -788,9 +789,12 @@
     lastInputSent = now;
     if (!ws || ws.readyState !== 1 || phase !== 'play' || !selfAlive) return;
     const inp = currentInput();
-    // 梅卡瓦迫击炮模式：开火改为发送迫击炮指令（锁定完成与冷却由服务器判定）
+    // 梅卡瓦迫击炮：本地锁 + 服务器冷却双重限制，按住手机开火也只发一发
     if (mortarMode && inp.shoot) {
-      ws.send(JSON.stringify({ t: 'mfire' }));
+      if (selfMortar <= 0 && mortarLocalLock <= 0) {
+        ws.send(JSON.stringify({ t: 'mfire' }));
+        mortarLocalLock = 30;
+      }
       inp.shoot = false;
     }
     ws.send(JSON.stringify({ t: 'input', thr: inp.thr, steer: inp.steer, ta: inp.ta, shoot: inp.shoot, boost: inp.boost }));
@@ -2445,9 +2449,11 @@
       if (localReload <= 0) localMag = (TANK_TYPES[selfType] && TANK_TYPES[selfType].mag) || MAG_SIZE;
     }
     const inpNow = currentInput();
-    // 迫击炮模式：本地预测弹（穿墙、慢速），30s 冷却由服务器控制（mc），此处只做即时视觉反馈
-    if (phase === 'play' && selfAlive && selfParts.turret && mortarMode && inpNow.shoot && pred && localFireCd <= 0) {
+    if (mortarLocalLock > 0) mortarLocalLock -= dt; // 本地迫击炮锁递减（30s）
+    // 迫击炮模式：本地预测弹（穿墙、慢速），30s 冷却由服务器控制（mc）+ 本地锁双重限制
+    if (phase === 'play' && selfAlive && selfParts.turret && mortarMode && inpNow.shoot && pred && localFireCd <= 0 && selfMortar <= 0 && mortarLocalLock <= 0) {
       localFireCd = 0.35; // 预测弹限频（服务器 30s 冷却为准）
+      mortarLocalLock = 30; // 与服务器同步锁 30s
       const ta = autoTurret ? pred.a : mouseAngle;
       predBullets.push({
         x: pred.x + Math.cos(ta) * 34, y: pred.y + Math.sin(ta) * 34,
