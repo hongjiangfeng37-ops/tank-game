@@ -1011,8 +1011,8 @@ function sim(room, dt, now) {
   // ---- 豹二A7 火控雷达：激活 30s 计时 + 冷却 5s 恢复 ----
   for (const p of alive) {
     if (!TANK_TYPES[p.type] || !TANK_TYPES[p.type].fireCtrl) continue;
-    if (p.radarT > 0) p.radarT -= dt;
-    if (p.radarCd > 0) p.radarCd -= dt;
+    if (p.radarT > 0) p.radarT -= dt; // 激活计时
+    else if (p.radarCd > 0) p.radarCd -= dt; // 激活结束后才开始 5s 冷却（倒计时在结束后显示）
   }
 
   // ---- T90A 窗帘干扰（只反导，不干扰坦克本体）：导弹进入前方扇形被原路返回，每次干扰后冷却 20s ----
@@ -1160,7 +1160,7 @@ function sim(room, dt, now) {
           room.bullets.push({
             x: mx - sinA * ox, y: my + Math.cos(ang) * ox,
             vx: Math.cos(ang) * bspeed, vy: sinA * bspeed,
-            ownerId: p.id, ownerType: p.type, pen: tt.pen + (p.radarT > 0 ? 50 : 0), life: BULLET.life, // 火控雷达开启期间穿深 +50
+            ownerId: p.id, ownerType: p.type, pen: tt.pen + (p.radarT > 0 ? 100 : 0), life: BULLET.life, // 火控雷达开启期间穿深 +100
             spawnT: now, // 出生保护：刚出膛 200ms 内不判定命中自己（防斜射时炮口投影落入命中框吞炮弹）
             penBounces: 0, // 反弹计数（90式反弹增益用）
             isHj: tt.instaKill || false, // 红箭10 导弹：极快、不可反弹、打中就死（长拖尾客户端渲染）
