@@ -112,14 +112,14 @@ const TANK_TYPES = {
     era: 300,                                       // 与美军相同
     armor: { front: 600, side: 200, back: 400 },
     armorEra: { front: 900, side: 800, back: 400 },
-    pen: 800, penDrop: 0, penBounceMax: 2,          // 反弹不扣穿深，最多 2 次
+    pen: 800, penDrop: 0, penBounceMax: 5,          // 反弹不扣穿深，最多 5 次
     ammoZone: 'rear',   // 尾舱弹药架：直接殉爆（同美军/日军）
     frontAmmoFire: true, // 前置弹药架：正面击穿起火（同日军机制）
     fireCtrl: true,      // 火控雷达：开启显示弹道（客户端）+ 穿深 +50，30s 持续/5s 冷却
     hasLoader: false,
   },
   jp: {
-    name: '日军 90式主战坦克', maxSpeed: 280, back: 0.6, reload: 3,
+    name: '日军 90式主战坦克', maxSpeed: 280, back: 0.6, reload: 2.5,
     era: 200,                                       // 爆反血量（用户指定 200）
     armor: { front: 550, side: 150, back: 250 },    // 基础装甲
     armorEra: { front: 800, side: 400, back: 500 }, // 爆反生效时（每部位 +250）
