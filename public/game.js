@@ -544,6 +544,11 @@
           sfx.boom();
           break;
         case 'mhit':
+          // 迫击炮命中：爆炸火焰 + 黑烟（发射方与目标都能看到打击效果）
+          spawnParticles(e.x, e.y, '#ff8a65', 20, 4);
+          spawnParticles(e.x, e.y, '#ffd54f', 12, 3);
+          spawnParticles(e.x, e.y, '#3a3a3a', 14, 3.5);
+          sfx.boom();
           if (e.id === myId) showDamageNote('💥 被迫击炮命中！爆反 -30%', false);
           break;
         case 'jam':
@@ -1027,11 +1032,19 @@
       rs.y += (rs.ty - rs.y) * 0.4;
       rs.vx = rs.tvx; rs.vy = rs.tvy;
     }
-    let hasOwnServerBullet = false;
+    // 自机炮弹类型集合：服务器对应类型弹丸存在时，该类型预测弹停画（迫击炮弹不影响主炮预测弹）
+    const ownBulletTypes = new Set();
+    for (const b of bullets) {
+      if (b.o === myId) {
+        if (b.mo) ownBulletTypes.add('mortar');
+        else if (b.hj) ownBulletTypes.add('hj');
+        else if (b.ag) ownBulletTypes.add('atgm');
+        else ownBulletTypes.add('normal');
+      }
+    }
     for (const b of bullets) {
       const rs = bulletRenders.get(b.i);
       if (rs) { b.x = rs.x; b.y = rs.y; b.vx = rs.vx; b.vy = rs.vy; } // 用插值位置渲染
-      if (b.o === myId) hasOwnServerBullet = true;
       if (b.r) {
         // 被窗帘干扰返回：蓝紫色电子干扰拖尾 + 闪烁（明显返回动画）
         const pulse = 0.6 + Math.sin(now / 55) * 0.4;
@@ -1088,7 +1101,9 @@
       ctx.beginPath(); ctx.arc(b.x, b.y, 7.5, 0, Math.PI * 2); ctx.fill();
     }
     for (const pb of predBullets) {
-      if (hasOwnServerBullet) break; // 服务器快照已接管自机炮弹，预测弹不再画（避免双弹）
+      // 服务器快照已接管该类型自机炮弹 → 该类型预测弹停画（各类型独立，迫击炮弹不吞主炮预测弹）
+      const pbTy = pb.isMortar ? 'mortar' : (pb.isHj ? 'hj' : (pb.isAtgm ? 'atgm' : 'normal'));
+      if (ownBulletTypes.has(pbTy)) continue;
       if (pb.isHj) {
         // 红箭10 预测弹：超长拖尾
         const tx = pb.x - pb.vx * 0.16, ty = pb.y - pb.vy * 0.16;
