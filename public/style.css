@@ -298,8 +298,8 @@ body.touch #btnFire { display: flex; }
 }
 body.touch #btnLayoutGame { display: flex; }
 
-/* ---------- 梅卡瓦迫击炮切换 + 反坦克导弹键 ---------- */
-#btnMortarMode, #btnAtgm, #btnAps {
+/* ---------- 梅卡瓦迫击炮切换 + 反坦克导弹键 + 99B APS + 豹二A7 火控雷达 ---------- */
+#btnMortarMode, #btnAtgm, #btnAps, #btnRadar {
   position: fixed; right: 14px; width: 50px; height: 50px; border-radius: 50%;
   background: rgba(22, 35, 61, 0.65); border: 2px solid rgba(255, 255, 255, 0.35); color: #fff;
   font-size: 18px; z-index: 11; display: none;
@@ -310,9 +310,12 @@ body.touch #btnLayoutGame { display: flex; }
 #btnAtgm { top: 202px; border-color: rgba(255, 213, 79, 0.6); }
 #btnAps { top: 262px; border-color: rgba(77, 208, 225, 0.6); }
 #btnAps.on { background: rgba(77, 208, 225, 0.45); border-color: #4dd0e1; }
+#btnRadar { top: 322px; border-color: rgba(126, 214, 223, 0.6); }
+#btnRadar.on { background: rgba(77, 208, 225, 0.45); border-color: #4dd0e1; }
 body.touch #btnMortarMode.show { display: flex; }
 body.touch #btnAtgm.show { display: flex; }
 body.touch #btnAps.show { display: flex; }
+body.touch #btnRadar.show { display: flex; }
 #rotHint {
   position: fixed; inset: 0; z-index: 40; display: none; flex-direction: column;
   align-items: center; justify-content: center; gap: 8px;
