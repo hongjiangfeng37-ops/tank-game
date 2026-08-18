@@ -10,8 +10,8 @@ android {
         applicationId "com.tankgame.app"
         minSdk 26
         targetSdk 34
-        versionCode 150
-        versionName "0.02.150"  // 测试版：0.02.(改动次数)
+        versionCode 151
+        versionName "0.02.151"  // 测试版：0.02.(改动次数)
     }
 
     buildTypes {
