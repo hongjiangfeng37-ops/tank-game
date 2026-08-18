@@ -2972,8 +2972,12 @@
     fire: { r: 14, t: 122, s: 66 },  // 开火键：right/top/直径
     boost: { r: 14, t: 76, s: 52 },  // 加速键
     map: { r: 12, t: 8, s: 78 },     // 小地图：right/top/宽
+    mortar: { r: 14, t: 142, s: 50 }, // 梅卡瓦迫击炮切换键
+    atgm: { r: 14, t: 202, s: 50 },  // 强化攻击提示键
+    aps: { r: 14, t: 262, s: 50 },   // 99B 主动防御键
+    radar: { r: 14, t: 322, s: 50 }, // 豹二A7 火控雷达键
   };
-  const LAYOUT_EL = { dpad: 'dpad', fire: 'btnFire', boost: 'boostBtn', map: 'minimap' };
+  const LAYOUT_EL = { dpad: 'dpad', fire: 'btnFire', boost: 'boostBtn', map: 'minimap', mortar: 'btnMortarMode', atgm: 'btnAtgm', aps: 'btnAps', radar: 'btnRadar' };
   let layout = loadLayout();
   let layoutSel = 'dpad';
   let layoutEdit = false;
@@ -3024,6 +3028,16 @@
       mmEl.style.width = layout.map.s + 'px';
       mmEl.style.height = Math.round(layout.map.s * 111 / 148) + 'px';
     }
+    // 手机技能键（迫击炮切换/强化攻击提示/主动防御/火控雷达）
+    for (const key of ['mortar', 'atgm', 'aps', 'radar']) {
+      const el = document.getElementById(LAYOUT_EL[key]);
+      if (el) {
+        el.style.right = layout[key].r + 'px';
+        el.style.top = layout[key].t + 'px';
+        el.style.width = layout[key].s + 'px';
+        el.style.height = layout[key].s + 'px';
+      }
+    }
   }
   function enterLayoutEdit() {
     layoutEdit = true;
@@ -3071,6 +3085,7 @@
     else if (layoutSel === 'fire') { layout.fire.r = Math.round(vw - left - rect.width); layout.fire.t = Math.round(top); }
     else if (layoutSel === 'boost') { layout.boost.r = Math.round(vw - left - rect.width); layout.boost.t = Math.round(top); }
     else if (layoutSel === 'map') { layout.map.r = Math.round(vw - left - rect.width); layout.map.t = Math.round(top); }
+    else if (layoutSel === 'mortar' || layoutSel === 'atgm' || layoutSel === 'aps' || layoutSel === 'radar') { layout[layoutSel].r = Math.round(vw - left - rect.width); layout[layoutSel].t = Math.round(top); }
     applyLayout();
   });
   document.addEventListener('pointerup', () => { drag = null; });
