@@ -106,15 +106,16 @@ const TANK_TYPES = {
     hasLoader: false,
   },
   de: {
-    // 欧盟 豹二A6主战坦克：装甲/爆反与美军相同；弹药架机制与日军相同（尾舱殉爆 + 前置弹药架起火）；
-    // 穿深 800，反弹一次不扣穿深，但最多反弹 2 次后消失
-    name: '欧盟 豹二A6主战坦克', maxSpeed: 270, back: 0.8, reload: 5,
+    // 欧盟 豹二A7主战坦克：装甲/爆反与美军相同；弹药架机制与日军相同（尾舱殉爆 + 前置弹药架起火）；
+    // 穿深 800，反弹一次不扣穿深，但最多反弹 2 次后消失；火控雷达：手动开启显示弹道，30s 持续/5s 冷却，开启期间穿深 +50
+    name: '欧盟 豹二A7主战坦克', maxSpeed: 270, back: 0.8, reload: 5,
     era: 300,                                       // 与美军相同
     armor: { front: 600, side: 200, back: 400 },
     armorEra: { front: 900, side: 800, back: 400 },
     pen: 800, penDrop: 0, penBounceMax: 2,          // 反弹不扣穿深，最多 2 次
     ammoZone: 'rear',   // 尾舱弹药架：直接殉爆（同美军/日军）
     frontAmmoFire: true, // 前置弹药架：正面击穿起火（同日军机制）
+    fireCtrl: true,      // 火控雷达：开启显示弹道（客户端）+ 穿深 +50，30s 持续/5s 冷却
     hasLoader: false,
   },
   jp: {
@@ -906,6 +907,9 @@ function spawnPlayer(room, p, seat) {
   p.apsOn = false;      // 激活中（抵挡下一次攻击）
   p.apsT = 0;           // 激活剩余秒
   p.apsCd = 0;          // 冷却剩余秒（两次用完开始）
+  // 豹二A7 火控雷达：手动开启显示弹道 + 穿深+50，30s 持续 / 5s 冷却
+  p.radarT = 0;         // 火控雷达激活剩余秒
+  p.radarCd = 0;        // 火控雷达冷却剩余秒
 }
 
 function startRound(room) {
@@ -1002,6 +1006,13 @@ function sim(room, dt, now) {
       p.apsCd -= dt;
       if (p.apsCd <= 0) { p.apsN = 2; room.pendingEvents.push({ k: 'aps', id: p.id, n: 2, cd: 0 }); }
     }
+  }
+
+  // ---- 豹二A7 火控雷达：激活 30s 计时 + 冷却 5s 恢复 ----
+  for (const p of alive) {
+    if (!TANK_TYPES[p.type] || !TANK_TYPES[p.type].fireCtrl) continue;
+    if (p.radarT > 0) p.radarT -= dt;
+    if (p.radarCd > 0) p.radarCd -= dt;
   }
 
   // ---- T90A 窗帘干扰（只反导，不干扰坦克本体）：导弹进入前方扇形被原路返回，每次干扰后冷却 20s ----
@@ -1149,7 +1160,7 @@ function sim(room, dt, now) {
           room.bullets.push({
             x: mx - sinA * ox, y: my + Math.cos(ang) * ox,
             vx: Math.cos(ang) * bspeed, vy: sinA * bspeed,
-            ownerId: p.id, ownerType: p.type, pen: tt.pen, life: BULLET.life,
+            ownerId: p.id, ownerType: p.type, pen: tt.pen + (p.radarT > 0 ? 50 : 0), life: BULLET.life, // 火控雷达开启期间穿深 +50
             spawnT: now, // 出生保护：刚出膛 200ms 内不判定命中自己（防斜射时炮口投影落入命中框吞炮弹）
             penBounces: 0, // 反弹计数（90式反弹增益用）
             isHj: tt.instaKill || false, // 红箭10 导弹：极快、不可反弹、打中就死（长拖尾客户端渲染）
@@ -1735,6 +1746,8 @@ function broadcast(room) {
       ap: TANK_TYPES[p.type] && TANK_TYPES[p.type].aps ? p.apsN : 0, // 99B 主动防御充能
       apo: p.apsOn ? Math.ceil(p.apsT) : 0, // 主动防御激活剩余秒
       apc: p.apsCd > 0 ? Math.ceil(p.apsCd) : 0, // 主动防御冷却剩余秒
+      rt: TANK_TYPES[p.type] && TANK_TYPES[p.type].fireCtrl ? (p.radarT > 0 ? Math.ceil(p.radarT) : 0) : 0, // 火控雷达激活剩余秒
+      rc: TANK_TYPES[p.type] && TANK_TYPES[p.type].fireCtrl ? (p.radarCd > 0 ? Math.ceil(p.radarCd) : 0) : 0, // 火控雷达冷却剩余秒
       kills: p.kills, wins: p.wins,
     };
   });
@@ -1840,6 +1853,18 @@ function onMessage(conn, buf) {
       p.apsOn = true;
       p.apsT = 10; // 开启 10 秒后消失（或被命中抵挡一次）
       room.pendingEvents.push({ k: 'aps', id: p.id, n: p.apsN, on: 1 });
+      break;
+    }
+    case 'radar': {
+      // 豹二A7 火控雷达：手动开启显示弹道 + 穿深+50，持续 30s，冷却 5s
+      if (!p || !p.room || p.room.phase !== 'play' || !p.alive) break;
+      const room = p.room;
+      const rt2 = TANK_TYPES[p.type];
+      if (!rt2 || !rt2.fireCtrl) break;
+      if (p.radarT > 0 || p.radarCd > 0 || !p.parts.turret) break; // 激活中/冷却中/炮塔损坏不可开启
+      p.radarT = 30;   // 持续 30s
+      p.radarCd = 5;   // 冷却 5s
+      room.pendingEvents.push({ k: 'radar', id: p.id, t: 30 });
       break;
     }
     case 'mfire': {
