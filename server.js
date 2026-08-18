@@ -1215,10 +1215,11 @@ function sim(room, dt, now) {
 
     // 反坦克导弹（ATGM）/ 红箭10导弹：进入 T90A 窗帘扇形 → 原路返回；干扰一次后冷却 20s（快照 sj）
     if (!dead && (b.isAtgm || b.isHj)) {
-      // 干扰检测：任一 T90A 炮塔前方扇形（±50°、700px）
+      // 干扰检测：任一 T90A 炮塔前方扇形（±50°、700px）；不干扰发射者自己的导弹
       for (const p of alive) {
         const jt = TANK_TYPES[p.type];
         if (!jt || !jt.shtora || b.returned) continue;
+        if (p.id === b.ownerId) continue; // 自己的导弹不受自己的干扰
         if (p.shtoraCd > 0) continue; // 干扰冷却中（20s）不返回导弹
         const jk = p.tank;
         const dx = b.x - jk.x, dy = b.y - jk.y;
@@ -1765,6 +1766,7 @@ function broadcast(room) {
       pen: Math.round(b.pen),
       ag: b.isAtgm ? 1 : 0, // 反坦克导弹标记（客户端样式）
       hj: b.isHj ? 1 : 0,   // 红箭10 导弹标记（客户端长拖尾渲染）
+      mo: b.isMortar ? 1 : 0, // 迫击炮弹标记（客户端按类型接管预测弹）
       r: b.returned ? 1 : 0, // 被干扰返回标记（客户端返回动画）
       i: b.id,              // 唯一 id（客户端插值）
     })),
